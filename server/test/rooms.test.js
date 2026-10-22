@@ -68,3 +68,28 @@ test('an empty room is destroyed after the TTL', async () => {
   await new Promise((r) => setTimeout(r, 60));
   assert.equal(store.rooms.has(host.roomId), false);
 });
+
+test('curtain overrides are relayed to the partner and kept for the room', () => {
+  const store = createRoomStore();
+  const host = store.create('s-host');
+  assert.equal(store.setCurtain('s-host', 'the-yes', true), null); // partner not here yet: nothing to relay
+  store.join('s-guest', host.key);
+  assert.deepEqual(store.curtainSnapshot('s-guest'), { 'the-yes': true });
+  assert.equal(store.setCurtain('s-guest', 'first-trip', false), 's-host');
+  assert.equal(store.setCurtain('s-host', 'the-yes', null), 's-guest');
+  assert.deepEqual(store.curtainSnapshot('s-host'), { 'first-trip': false });
+});
+
+test('curtain events from a socket without a seat are ignored', () => {
+  const store = createRoomStore();
+  assert.equal(store.setCurtain('nobody', 'a', true), undefined);
+  assert.deepEqual(store.curtainSnapshot('nobody'), {});
+});
+
+test('a room holds at most 500 curtain overrides', () => {
+  const store = createRoomStore();
+  store.create('s-host');
+  for (let i = 0; i < 500; i++) store.setCurtain('s-host', 'p' + i, true);
+  assert.equal(store.setCurtain('s-host', 'one-more', true), undefined);
+  assert.equal(store.setCurtain('s-host', 'p0', false), null); // updating an existing one still works
+});

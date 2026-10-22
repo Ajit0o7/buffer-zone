@@ -21,8 +21,10 @@ export default function Hud() {
 
   return (
     <div className="hud" aria-live="polite">
+      {locked && <div className="crosshair" aria-hidden="true" />}
+
       {!locked && (
-        <div className="hint">Click to look around · WASD to walk · Shift to run · Esc to free the mouse</div>
+        <div className="hint">Click to look around · WASD to walk · Shift to run · Click a curtain to open it · Esc to free the mouse</div>
       )}
 
       {role === 'host' && roomKey && !peerConnected && (

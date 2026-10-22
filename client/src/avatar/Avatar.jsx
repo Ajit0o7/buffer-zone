@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useAnimations, useGLTF } from '@react-three/drei';
 import { MathUtils } from 'three';
-import { CLIP_NAMES, CLIP_SOURCE_URL, RUN_SPEED, WALK_SPEED } from '../world/config';
+import { CLIP_NAMES, CLIP_REFERENCE_SPEED, CLIP_SOURCE_URL, RUN_SPEED, WALK_SPEED } from '../world/config';
 import { damp } from '../utils/math';
 
 const STATES = Object.keys(CLIP_NAMES); // ['idle', 'walk', 'run']
@@ -65,9 +65,10 @@ export default function Avatar({ url, motion, footOffset = 0 }) {
       actions[name]?.setEffectiveWeight(w[name]);
     }
 
-    // Scale stride with speed to limit foot sliding. Clamped so the gait never looks cartoonish.
-    if (actions.walk) actions.walk.timeScale = MathUtils.clamp(motion.speed / WALK_SPEED, 0.6, 1.4);
-    if (actions.run) actions.run.timeScale = MathUtils.clamp(motion.speed / RUN_SPEED, 0.6, 1.4);
+    // Play each clip at the rate that matches ground speed, so the feet don't slide.
+    // Clamped so the gait never looks cartoonish.
+    if (actions.walk) actions.walk.timeScale = MathUtils.clamp(motion.speed / CLIP_REFERENCE_SPEED.walk, 0.6, 2.0);
+    if (actions.run) actions.run.timeScale = MathUtils.clamp(motion.speed / CLIP_REFERENCE_SPEED.run, 0.6, 1.7);
 
     // Phase lock: while walk and run blend, put run's gait at walk's point in its cycle, so the legs don't ghost.
     if (actions.walk && actions.run && w.walk > 0.01 && w.run > 0.01) {

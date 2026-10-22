@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Audio, AudioContext, AudioListener, AudioLoader, Object3D, PositionalAudio, Vector3 } from 'three';
-import { roomAt } from '../world/rooms';
+import { musicLevelAt } from '../world/rooms';
 import { localMotion, remote } from '../world/shared';
 import { INTERP_DELAY_MS } from '../world/config';
 import { damp } from '../utils/math';
@@ -29,8 +29,9 @@ export default function SpatialAudio() {
   const anchor = useMemo(() => new Object3D(), []);
   const footstep = useMemo(() => {
     const sound = new PositionalAudio(listener);
-    sound.setRefDistance(2); // full volume within 2 m
-    sound.setRolloffFactor(1.6);
+    // Tuned for large halls: full volume within 3 m, then a gentle falloff so steps carry down the nave.
+    sound.setRefDistance(3);
+    sound.setRolloffFactor(1.1);
     sound.setDistanceModel('inverse');
     return sound;
   }, [listener]);
@@ -72,10 +73,9 @@ export default function SpatialAudio() {
   }, [camera, listener, music, footstep, anchor]);
 
   useFrame((_, dt) => {
-    // Music follows the room you're standing in.
-    const room = roomAt(localMotion.position);
-    const target = (room?.music ?? 0.25) * MUSIC_BASE_VOLUME;
-    if (music.buffer) music.setVolume(damp(music.getVolume(), target, 2, dt));
+    // Music follows the zone you're in, crossfading across zone edges.
+    const target = musicLevelAt(localMotion.position) * MUSIC_BASE_VOLUME;
+    if (music.buffer) music.setVolume(damp(music.getVolume(), target, 1.2, dt));
 
     // Footsteps for the partner, cadence proportional to their speed.
     const sample = remote.sample(performance.now() - INTERP_DELAY_MS, partner);

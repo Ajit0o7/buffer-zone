@@ -7,6 +7,17 @@ export const MAX_SPEED = 10; // m/s; the game's run speed is 4.8
 const isFiniteNumber = (n) => typeof n === 'number' && Number.isFinite(n);
 const clamp = (n, lo, hi) => Math.min(Math.max(n, lo), hi);
 
+const CURTAIN_ID = /^[\w-]{1,64}$/;
+
+/** A curtain event: { id: painting id, open: true | false | null }. Returns null if malformed. */
+export function sanitizeCurtain(payload) {
+  const id = payload?.id;
+  const open = payload?.open;
+  if (typeof id !== 'string' || !CURTAIN_ID.test(id)) return null;
+  if (open !== true && open !== false && open !== null) return null;
+  return { id, open };
+}
+
 /** Keys are shown as XXXX-XXXX; accept any case, dashes and spaces. Returns '' if malformed. */
 export function normalizeKey(raw) {
   if (typeof raw !== 'string') return '';

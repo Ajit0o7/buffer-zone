@@ -4,6 +4,7 @@ dist/
 .env.*
 !.env.example
 client/public/draco/
+client/public/basis/
 *.log
 .DS_Store
 # Large binary assets: keep them in Git LFS or a private bucket, not plain Git

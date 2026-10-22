@@ -1,95 +1,129 @@
-import { Component, useEffect, useMemo, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
-import { useTexture } from '@react-three/drei';
-import { Euler, Object3D, SRGBColorSpace, Vector3 } from 'three';
+import { useEffect, useMemo, useRef } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
+import { Raycaster, Vector2, Vector3 } from 'three';
+import GalleryBatch, { useGallery } from './GalleryBatch';
+import CurtainPhotoFrame from './CurtainPhotoFrame';
+import { partner } from './curtainState';
 import { PHOTOS } from './photos';
-import { useSession } from '../state/session';
-import { localMotion } from '../world/shared';
-import { PHOTO_PROXIMITY } from '../world/config';
-import { damp } from '../utils/math';
+import { localMotion, remote } from '../world/shared';
+import { GALLERY, INTERP_DELAY_MS } from '../world/config';
 
-// Frames stay visible even if their image fails to load, so one bad file can't blank the scene.
-class FrameBoundary extends Component {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  render() {
-    return this.state.failed ? this.props.fallback : this.props.children;
-  }
-}
+/**
+ * A fixed pool of spotlights that follow the most-open paintings near the player. Every light in a
+ * scene adds cost to every lit pixel, and changing the light count recompiles shaders, so instead of
+ * one spotlight per painting there are always exactly GALLERY.spotlights, dimmed to zero when idle.
+ */
+function SpotlightPool() {
+  const gallery = useGallery();
+  const lights = useRef([]);
+  const targets = useRef([]);
+  const picks = useMemo(() => new Array(GALLERY.spotlights).fill(-1), []);
+  const scores = useMemo(() => new Float32Array(GALLERY.spotlights), []);
 
-function FrameWithPhoto({ photo }) {
-  const texture = useTexture(photo.src);
-  texture.colorSpace = SRGBColorSpace;
-  return (
-    <mesh position={[0, 0, 0.03]}>
-      <planeGeometry args={[1.0, 0.7]} />
-      <meshStandardMaterial map={texture} roughness={0.85} metalness={0} />
-    </mesh>
-  );
-}
-
-function PhotoFrame({ photo }) {
-  const lightRef = useRef();
-  const targetRef = useRef();
-  const setActivePhoto = useSession((s) => s.setActivePhoto);
-
-  const anchor = useMemo(() => new Vector3(...photo.position), [photo.position]);
-  // The frame's outward normal, so the spotlight sits in front of the canvas, not inside the wall.
-  const lightPos = useMemo(() => {
-    const normal = new Vector3(0, 0, 1).applyEuler(new Euler(...photo.rotation));
-    return anchor.clone().addScaledVector(normal, 1.6).add(new Vector3(0, 1.4, 0));
-  }, [anchor, photo.rotation]);
-
-  // Attach the spotlight's aim point once both objects exist.
   useEffect(() => {
-    if (lightRef.current && targetRef.current) lightRef.current.target = targetRef.current;
+    lights.current.forEach((light, k) => (light.target = targets.current[k]));
   }, []);
 
-  const nearRef = useRef(false);
-  useFrame((_, dt) => {
-    const near = localMotion.position.distanceTo(anchor) < PHOTO_PROXIMITY;
-
-    // Ease the spotlight in and out instead of snapping on.
-    const light = lightRef.current;
-    if (light) light.intensity = damp(light.intensity, near ? 45 : 0, 3.5, dt);
-
-    if (near !== nearRef.current) {
-      nearRef.current = near;
-      const store = useSession.getState();
-      if (near) store.setActivePhoto(photo.id);
-      else if (store.activePhoto === photo.id) store.setActivePhoto(null);
+  useFrame(() => {
+    picks.fill(-1);
+    scores.fill(0);
+    // Keep the N best: open amount, weighted toward paintings close to the player.
+    for (let i = 0; i < gallery.count; i++) {
+      const open = gallery.open[i];
+      const anchor = gallery.anchors[i];
+      if (open < 0.02 || !anchor.placed) continue;
+      const score = open / (1 + anchor.position.distanceTo(localMotion.position) * 0.1);
+      for (let k = 0; k < picks.length; k++) {
+        if (score > scores[k]) {
+          picks.copyWithin(k + 1, k);
+          scores.copyWithin(k + 1, k);
+          picks[k] = i;
+          scores[k] = score;
+          break;
+        }
+      }
+    }
+    for (let k = 0; k < picks.length; k++) {
+      const light = lights.current[k];
+      const i = picks[k];
+      if (i < 0) {
+        light.intensity = 0;
+        continue;
+      }
+      const { position, normal } = gallery.anchors[i];
+      light.position.copy(position).addScaledVector(normal, 2.2);
+      light.position.y += 1.8;
+      targets.current[k].position.copy(position);
+      light.intensity = 45 * gallery.open[i];
     }
   });
 
-  return (
-    <>
-      <group position={photo.position} rotation={photo.rotation}>
-        {/* Gilded frame: clearcoat gives the lacquered-wood sheen */}
-        <mesh castShadow>
-          <boxGeometry args={[1.22, 0.92, 0.05]} />
-          <meshPhysicalMaterial color="#4a3320" roughness={0.35} clearcoat={0.6} clearcoatRoughness={0.25} />
-        </mesh>
-        <FrameBoundary fallback={<mesh position={[0, 0, 0.03]}><planeGeometry args={[1.0, 0.7]} /><meshStandardMaterial color="#222" /></mesh>}>
-          <FrameWithPhoto photo={photo} />
-        </FrameBoundary>
-      </group>
-
+  return Array.from({ length: GALLERY.spotlights }, (_, k) => (
+    <group key={k}>
       <spotLight
-        ref={lightRef}
-        position={lightPos}
-        angle={0.28}
-        penumbra={0.9}
-        distance={9}
+        ref={(el) => (lights.current[k] = el)}
+        angle={0.42}
+        penumbra={0.85}
+        distance={14}
+        decay={2}
         intensity={0}
         color="#fff1d6"
       />
-      <object3D ref={targetRef} position={photo.position} />
-    </>
-  );
+      <object3D ref={(el) => (targets.current[k] = el)} />
+    </group>
+  ));
 }
 
-export default function PhotoFrames() {
-  return PHOTOS.map((photo) => <PhotoFrame key={photo.id} photo={photo} />);
+/**
+ * While the mouse is captured (pointer lock) the cursor sits at the centre of the screen, so a click
+ * is resolved by casting from there. Only the curtain hitboxes are tested, never the whole house.
+ */
+function CenterClick() {
+  const gallery = useGallery();
+  const { camera, gl } = useThree();
+
+  useEffect(() => {
+    const raycaster = new Raycaster();
+    raycaster.far = 12;
+    const center = new Vector2(0, 0);
+    const onMouseDown = (event) => {
+      if (event.button !== 0 || document.pointerLockElement !== gl.domElement) return;
+      raycaster.setFromCamera(center, camera);
+      const hit = raycaster.intersectObjects(gallery.hitboxes.filter(Boolean), false)[0];
+      if (!hit) return;
+      gallery.toggles[gallery.hitboxes.indexOf(hit.object)]?.();
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [gallery, camera, gl]);
+
+  return null;
+}
+
+/** Keeps the partner's interpolated position in shared state, for releasing held curtains. */
+function PartnerTracker() {
+  const sample = useMemo(() => ({ position: new Vector3(), yaw: 0, speed: 0, anim: 'idle' }), []);
+  useFrame(() => {
+    const s = remote.sample(performance.now() - INTERP_DELAY_MS, sample);
+    partner.known = s !== null;
+    if (s) partner.position.copy(sample.position);
+  });
+  return null;
+}
+
+/**
+ * The gallery: every photo in photos.js behind a curtain. Must sit inside <Physics>, because each
+ * frame snaps itself onto the nearest wall with a physics ray when the scene starts.
+ */
+export default function PhotoFrames({ photos = PHOTOS }) {
+  return (
+    <GalleryBatch count={photos.length}>
+      {photos.map((photo, i) => (
+        <CurtainPhotoFrame key={photo.id} photo={photo} index={i} />
+      ))}
+      <SpotlightPool />
+      <CenterClick />
+      <PartnerTracker />
+    </GalleryBatch>
+  );
 }

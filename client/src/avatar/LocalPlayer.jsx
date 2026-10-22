@@ -6,16 +6,31 @@ import Avatar from './Avatar';
 import { useKeys } from '../input/useKeys';
 import { socket } from '../net/socket';
 import { useSession } from '../state/session';
-import { RUN_SPEED, SEND_HZ, WALK_SPEED } from '../world/config';
+import { ACCELERATION, CAMERA, DECELERATION, GRAVITY, RUN_SPEED, SEND_HZ, WALK_SPEED } from '../world/config';
 import { localMotion } from '../world/shared';
-import { damp, dampAngle } from '../utils/math';
+import { dampAngle } from '../utils/math';
 
 const UP = new Vector3(0, 1, 0);
-const CAMERA_DISTANCE = 4.2;
-const CAMERA_HEIGHT = 1.8;
-const CAMERA_CLEARANCE = 0.25; // keep the lens this far off the wall it hits
-const CAPSULE_HALF_HEIGHT = 0.6; // total capsule height = 2 * (half height + radius) = 1.8 m, matching the avatars
-const CAPSULE_RADIUS = 0.3;
+
+// Capsule: 1.8 m tall overall, matching the avatars. The slightly wider radius keeps the player
+// from threading between column bases in the colonnades.
+const CAPSULE_RADIUS = 0.35;
+const CAPSULE_HALF_HEIGHT = 0.55; // total height = 2 * (half height + radius) = 1.8 m
+const CAPSULE_CENTER = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS;
+
+// Rapier character controller. It moves the capsule by shape-casting, so it can't tunnel through
+// walls at sprint speed, and it handles steps, slopes and ground contact itself.
+const SKIN = 0.02; // gap kept from surfaces; avoids jitter against walls
+const STEP_HEIGHT = 0.4; // climbs plinths and stair treads up to this tall...
+const STEP_MIN_WIDTH = 0.2; // ...when there is at least this much floor on top
+const SNAP_TO_GROUND = 0.5; // stays glued to the floor going down steps and ramps
+const MAX_SLOPE = (50 * Math.PI) / 180; // walkable incline
+const MIN_SLIDE = (35 * Math.PI) / 180; // steeper than this, the capsule slides back down
+const MAX_FALL_SPEED = 30;
+const GROUND_STICK = -1; // a small constant pull while grounded keeps ground detection stable
+const MAX_DT = 1 / 15; // a stalled tab resumes smoothly instead of leaping
+const FELL_OUT_Y = -30; // safety net: respawn if the player ever leaves the map
+
 const SEND_INTERVAL = 1 / SEND_HZ;
 
 // Scratch vectors, reused every frame so the render loop allocates nothing.
@@ -25,20 +40,47 @@ const lookAt = new Vector3();
 const toCamera = new Vector3();
 
 /**
- * The local player: a dynamic capsule under Rapier, driven by velocity so walls stop it
- * cleanly. The camera orbits with mouse look (pointer lock).
+ * The local player: a kinematic capsule driven by Rapier's character controller, plus a
+ * third-person camera that orbits with mouse look (pointer lock) and pulls in when a wall is in the way.
  */
 export default function LocalPlayer({ url }) {
   const body = useRef();
+  const collider = useRef();
+  const controller = useRef();
   const keys = useKeys();
   const { camera, gl } = useThree();
   const { world, rapier } = useRapier();
   const role = useSession((s) => s.role);
   // Start side by side across the nave (the open walkway runs along x), not stacked on one spot.
-  const spawnZ = role === 'host' ? -1 : 1;
-  // Start the camera looking down the nave: it sits along x, where the walkway is open, rather than inside the arcades.
+  const spawn = useRef([0, CAPSULE_CENTER + 0.05, role === 'host' ? -1.5 : 1.5]).current;
+  // Start the camera looking down the nave, rather than into the arcades.
   const cameraYaw = useRef(Math.PI / 2);
   const sendTimer = useRef(0);
+  const motion = useRef({ velocity: new Vector3(), verticalSpeed: 0, grounded: false }).current;
+
+  useEffect(() => {
+    const c = world.createCharacterController(SKIN);
+    c.enableAutostep(STEP_HEIGHT, STEP_MIN_WIDTH, false);
+    c.enableSnapToGround(SNAP_TO_GROUND);
+    c.setMaxSlopeClimbAngle(MAX_SLOPE);
+    c.setMinSlopeSlideAngle(MIN_SLIDE);
+    c.setSlideEnabled(true);
+    controller.current = c;
+    return () => {
+      world.removeCharacterController(c);
+      controller.current = null;
+    };
+  }, [world]);
+
+  // Development only (stripped from production builds): lets tests and the console move the player.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return undefined;
+    window.__teleport = (x, y, z, yaw) => {
+      body.current?.setNextKinematicTranslation({ x, y, z });
+      if (yaw !== undefined) cameraYaw.current = yaw;
+    };
+    return () => delete window.__teleport;
+  }, []);
 
   // Pointer-lock mouse look. Only active once the canvas has been clicked.
   useEffect(() => {
@@ -55,40 +97,70 @@ export default function LocalPlayer({ url }) {
     };
   }, [gl]);
 
-  useFrame((_, dt) => {
+  useFrame((_, rawDt) => {
     const b = body.current;
-    if (!b) return;
+    const c = controller.current;
+    const col = collider.current;
+    if (!b || !c || !col) return;
+    const dt = Math.min(rawDt, MAX_DT);
 
+    // Input, relative to where the camera looks.
     const { forward, back, left, right, run } = keys.current;
     moveDir.set(Number(right) - Number(left), 0, Number(back) - Number(forward));
     const moving = moveDir.lengthSq() > 0;
+    if (moving) moveDir.normalize().applyAxisAngle(UP, cameraYaw.current);
+    const targetSpeed = moving ? (run ? RUN_SPEED : WALK_SPEED) : 0;
 
-    if (moving) moveDir.normalize().applyAxisAngle(UP, cameraYaw.current); // camera-relative input
+    // Tuned damping: ease toward the target velocity, a little faster when stopping.
+    const k = 1 - Math.exp(-(moving ? ACCELERATION : DECELERATION) * dt);
+    motion.velocity.x += (moveDir.x * targetSpeed - motion.velocity.x) * k;
+    motion.velocity.z += (moveDir.z * targetSpeed - motion.velocity.z) * k;
+    motion.verticalSpeed = motion.grounded
+      ? GROUND_STICK
+      : Math.max(motion.verticalSpeed - GRAVITY * dt, -MAX_FALL_SPEED);
 
-    const speed = moving ? (run ? RUN_SPEED : WALK_SPEED) : 0;
-    const vy = b.linvel().y; // gravity and collisions own the vertical axis
-    b.setLinvel({ x: moveDir.x * speed, y: vy, z: moveDir.z * speed }, true);
-
-    if (moving) localMotion.yaw = dampAngle(localMotion.yaw, Math.atan2(moveDir.x, moveDir.z), 12, dt);
-    localMotion.speed = speed;
-    localMotion.anim = speed === 0 ? 'idle' : speed > WALK_SPEED ? 'run' : 'walk';
+    // Let the controller resolve walls, steps, slopes and the ground.
+    c.computeColliderMovement(col, {
+      x: motion.velocity.x * dt,
+      y: motion.verticalSpeed * dt,
+      z: motion.velocity.z * dt,
+    });
+    const m = c.computedMovement();
+    motion.grounded = c.computedGrounded();
+    // What actually happened becomes the velocity, so sliding along a wall doesn't keep pushing into it.
+    motion.velocity.x = m.x / dt;
+    motion.velocity.z = m.z / dt;
 
     const t = b.translation();
-    localMotion.position.set(t.x, t.y, t.z);
+    let x = t.x + m.x;
+    let y = t.y + m.y;
+    let z = t.z + m.z;
+    if (y < FELL_OUT_Y) {
+      [x, y, z] = spawn;
+      motion.velocity.set(0, 0, 0);
+      motion.verticalSpeed = 0;
+    }
+    b.setNextKinematicTranslation({ x, y, z });
+
+    const speed = Math.hypot(motion.velocity.x, motion.velocity.z);
+    if (speed > 0.1) localMotion.yaw = dampAngle(localMotion.yaw, Math.atan2(motion.velocity.x, motion.velocity.z), 12, dt);
+    localMotion.speed = speed;
+    localMotion.anim = speed < 0.1 ? 'idle' : speed > WALK_SPEED + 0.5 ? 'run' : 'walk';
+    localMotion.position.set(x, y, z);
 
     // Third-person follow camera with frame-rate-independent smoothing.
     const yaw = cameraYaw.current;
-    camGoal.set(t.x + Math.sin(yaw) * CAMERA_DISTANCE, t.y + CAMERA_HEIGHT, t.z + Math.cos(yaw) * CAMERA_DISTANCE);
-    lookAt.set(t.x, t.y + 1.3, t.z);
+    camGoal.set(x + Math.sin(yaw) * CAMERA.distance, y + CAMERA.height, z + Math.cos(yaw) * CAMERA.distance);
+    lookAt.set(x, y + CAMERA.lookHeight, z);
 
     // Camera occlusion: cast from the look point toward the camera, and pull in if a wall is in the way.
     toCamera.subVectors(camGoal, lookAt);
     const distance = toCamera.length();
     toCamera.divideScalar(distance);
     const ray = new rapier.Ray(lookAt, toCamera);
-    const hit = world.castRay(ray, distance, true, undefined, undefined, undefined, b);
+    const hit = world.castRay(ray, distance, true, rapier.QueryFilterFlags.ONLY_FIXED);
     if (hit) {
-      const safe = Math.max(hit.timeOfImpact - CAMERA_CLEARANCE, 0.4);
+      const safe = Math.max(hit.timeOfImpact - CAMERA.clearance, 0.5);
       camGoal.copy(lookAt).addScaledVector(toCamera, safe);
     }
 
@@ -100,7 +172,7 @@ export default function LocalPlayer({ url }) {
     if (sendTimer.current >= SEND_INTERVAL) {
       sendTimer.current = 0;
       socket.volatile.emit('player:update', {
-        p: [t.x, t.y, t.z],
+        p: [x, y, z],
         r: localMotion.yaw,
         a: localMotion.anim,
         v: speed,
@@ -109,16 +181,9 @@ export default function LocalPlayer({ url }) {
   });
 
   return (
-    <RigidBody
-      ref={body}
-      position={[0, CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS, spawnZ]}
-      type="dynamic"
-      colliders={false}
-      lockRotations
-      linearDamping={0.5}
-    >
-      <CapsuleCollider args={[CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS]} />
-      <Avatar url={url} motion={localMotion} footOffset={-(CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS)} />
+    <RigidBody ref={body} position={spawn} type="kinematicPosition" colliders={false}>
+      <CapsuleCollider ref={collider} args={[CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS]} />
+      <Avatar url={url} motion={localMotion} footOffset={-CAPSULE_CENTER} />
     </RigidBody>
   );
 }

@@ -1,7 +1,11 @@
 # Our House — a private two-player 3D mansion
 
 A web-native, real-time 3D home for two people. The host (the boy) creates a room and shares a key;
-the guest (the girl) enters it and both walk through a photoreal house together.
+the guest (the girl) enters it and both walk through a cathedral-scale palace, where family photos hang behind
+velvet curtains that part as you approach.
+
+Deep dives: [docs/PERFORMANCE.md](docs/PERFORMANCE.md) (90+ fps architecture, KTX2 pipeline) ·
+[docs/GALLERY.md](docs/GALLERY.md) (curtain mechanic, VRAM lifecycle, sync).
 
 ```
 buffer-zone/
@@ -14,19 +18,22 @@ buffer-zone/
 │   │   ├── hdri/          venice_sunset_1k.hdr (image-based lighting)
 │   │   ├── photos/        your photos, referenced by gallery/photos.js (placeholders until you add yours)
 │   │   ├── audio/         footstep.wav, romantic-theme.wav (placeholders until you add yours)
-│   │   └── draco/gltf/    Draco decoder (copied from three on npm install)
+│   │   ├── draco/gltf/    Draco decoder   } copied from three on npm install
+│   │   └── basis/         KTX2 transcoder }  (scripts/copy-decoders.mjs)
 │   └── src/
 │       ├── main.jsx · App.jsx · styles.css
 │       ├── lobby/         Lobby.jsx: create room / enter key (shows offline state)
 │       ├── ui/            ErrorBoundary.jsx: a failed asset shows a message, not a blank page
 │       ├── net/           socket.js: Socket.io client + event bridge
-│       ├── state/         session.js: zustand (UI state, reconnect token)
+│       ├── state/         session.js: zustand (UI state, reconnect token); perf.js: rendering tier
 │       ├── world/         config.js (tuning + asset URLs), shared.js (per-frame state), rooms.js (zones)
 │       ├── input/         useKeys.js
-│       ├── scene/         GameScene.jsx (Canvas), Lighting.jsx (IBL + post), Mansion.jsx (lazy GLB + colliders),
-│       │                  Loading.jsx (DOM progress overlay)
-│       ├── avatar/        Avatar.jsx (blend tree), LocalPlayer.jsx (physics + camera + sync), RemotePlayer.jsx
-│       ├── gallery/       PhotoFrames.jsx (spotlight + proximity), photos.js (your data)
+│       ├── scene/         GameScene.jsx (Canvas), Lighting.jsx (IBL, follow-sun shadows, post tiers),
+│       │                  Mansion.jsx (lazy GLB + colliders), PerfGovernor.jsx (adaptive DPR and tier),
+│       │                  loaders.js (Draco + KTX2 workers), Loading.jsx (DOM progress overlay)
+│       ├── avatar/        Avatar.jsx (blend tree), LocalPlayer.jsx (character controller + camera + sync), RemotePlayer.jsx
+│       ├── gallery/       PhotoFrames.jsx, CurtainPhotoFrame.jsx, GalleryBatch.jsx (instanced), curtainMaterial.js,
+│       │                  textureCache.js (LRU VRAM), curtainState.js (sync), photos.js (your data)
 │       ├── audio/         SpatialAudio.jsx (room music + positional footsteps)
 │       ├── hud/           Hud.jsx (room key, photo caption overlay)
 │       └── utils/         math.js (damped smoothing)
@@ -35,8 +42,9 @@ buffer-zone/
 │       ├── index.js       HTTP + Socket.io, rate limits, 20 Hz fan-out, graceful shutdown
 │       ├── rooms.js       room registry: keys hashed, tokens for reconnect, cleanup
 │       └── validate.js    pure input checks: key normalisation, payload sanitising
-└── server/test/           node:test unit tests (run: npm test)
-└── scripts/copy-draco.mjs
+├── server/test/           node:test unit tests (run: npm test)
+├── docs/                  PERFORMANCE.md, GALLERY.md
+└── scripts/               copy-decoders.mjs, fetch-assets.mjs, make-standins.mjs
 ```
 
 ---
@@ -81,42 +89,48 @@ Single Node process, in-memory rooms (`server/src/rooms.js`).
 | C→S | `player:update` (volatile) | `{ p:[x,y,z], r, a, v }` | 20 Hz |
 | S→C | `world:peer` (volatile) | `{ p, r, a, v, t }` | Partner's latest state, 20 Hz |
 | S→C | `room:peer` | `{ connected }` | Partner joined or left |
+| C→S | `gallery:curtain` | `{ id, open }` | Click: hold open/closed, or `null` to release (burst 20, 10/s) |
+| S→C | `gallery:curtain` | `{ id, open }` | The partner's click, mirrored |
+| S→C | `gallery:state` | `{ [id]: bool }` | Held curtains, sent on join and resume |
 
 Bandwidth: about 60 bytes × 20 Hz × 2 directions ≈ 2.4 KB/s per player. Latency is one network RTT plus
 the interpolation delay (`INTERP_DELAY_MS = 110` in `world/config.js`).
 
 ### 1.4 Motion and animation
 
-- **Local player:** a dynamic capsule with rotation locked. Input sets *velocity*, not position, so walls
-  stop it through the physics solver.
-- **Blend tree:** a 1-D tree on ground speed, idle → walk (2.2 m/s) → run (4.8 m/s), with linear cross-weights
-  that sum to 1. Weights are damped every frame (`λ = 8`), so transitions never pop.
+- **Local player:** a kinematic capsule (1.8 m, radius 0.35 m) moved by Rapier's character controller. It
+  shape-casts, so it can't tunnel through walls at sprint speed; it climbs steps up to 0.4 m, snaps to the
+  ground going down, and treats slopes over 50° as walls. Walk 3.5 m/s, sprint 8 m/s, with eased acceleration
+  (λ = 10) and a slightly faster stop (λ = 14). The house is scaled 1.5× (`MANSION_SCALE`) to cathedral size.
+- **Blend tree:** a 1-D tree on ground speed, idle → walk (3.5 m/s) → run (8 m/s), with linear cross-weights
+  that sum to 1. Weights are damped every frame (`λ = 8`), so transitions never pop. Each clip plays at
+  speed ÷ its capture speed (`CLIP_REFERENCE_SPEED`), so feet don't slide.
 - **Partner:** visual only, no collider. Each server snapshot is stamped with the local receive time, and the partner is
   rendered `INTERP_DELAY_MS` in the past, blending between the two snapshots that bracket that moment. This needs no clock
   sync between machines, and it holds the last pose if packets stop instead of extrapolating.
-- **Camera:** a third-person follow camera. A Rapier ray from the look point to the camera pulls the camera in when a wall
-  is in the way, so the view never clips through the house.
+- **Camera:** a third-person follow camera, 5.5 m back and 2.4 m up, FOV 60°, near 0.1 / far 250. A Rapier ray from the
+  look point to the camera pulls the camera in when a wall is in the way, so the view never clips through the house.
 - **Phase lock:** while walk and run blend, the run clip is set to walk's point in its cycle, so the legs don't ghost.
 
 ### 1.5 Rendering pipeline
 
 ```
-Environment (IBL)  ─┐
-Key light (shadow) ─┼─► Scene ─► SSAO ─► Bloom ─► DepthOfField ─► ToneMapping (ACES) ─► screen
-Warm practicals    ─┘
+Environment (IBL)               ─┐
+Follow-sun (avatar shadows only) ─┼─► Scene ─► [SSAO*] ─► Bloom ─► [DoF*] ─► ToneMapping ─► grade (LUT) ─► screen
+Spotlight pool (2, paintings)   ─┘                                   * cinematic tier only
 ```
 
-The environment is procedural by default (window and lamp light panels), so it works offline. Add a CC0 HDRI and pass
-`hdri="/hdri/room.hdr"` for a captured environment. Quality tiers are in `scene/Lighting.jsx`: on devices with fewer
-than 4 logical cores, SSAO and DoF are dropped automatically.
+The tier is chosen by `PerfGovernor` from the measured frame rate (target min(refresh, 90) fps), or forced with
+`?quality=low|high|cinematic`. See [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
 ### 1.6 Interaction and audio
 
-- **Photo frames:** when the local player is within 2.6 m, a spotlight eases on (intensity damped to 45),
-  and the DOM caption fades in. Outside that range it fades out.
-- **Room music:** each zone in `world/rooms.js` has a music weight. Volume eases toward it (λ = 2).
+- **Curtain gallery:** each photo hangs behind a velvet curtain that parts within 3.5 m, or on a click that is
+  synced to the partner. Photos load only when first revealed and are released when far away. See
+  [docs/GALLERY.md](docs/GALLERY.md).
+- **Room music:** each zone in `world/rooms.js` has a music weight, and the level crossfades over 6 m at zone edges.
 - **Partner footsteps:** a `PositionalAudio` anchored to the partner. Cadence = speed ÷ 0.9 m per stride,
-  so it speeds up on a run and stops when they stop. Falls off with distance (inverse model, 2 m reference).
+  so it speeds up on a run and stops when they stop. Falls off with distance (inverse model, 3 m reference, gentle rolloff for large halls).
 - **Autoplay:** the Create/Join click in the lobby calls `AudioContext.resume()`. Music starts as soon as it has loaded, and on
   the next click if the browser still blocks it.
 
@@ -219,10 +233,14 @@ under Mixamo's terms. Both stay in your local `client/public/`, which the `.giti
 without checking those terms. The HDRI is from Poly Haven (CC0).
 
 The photos and music are still placeholders. Run `cd client && npm run standins` to regenerate them, and replace them with
-your own files, keeping the same paths. The frame positions in `gallery/photos.js` were found with a line-of-sight check from a
-standing point in the nave, so move them when you change the house.
+your own files, keeping the same paths. The frame positions in `gallery/photos.js` were found by a search for wall areas flat
+enough for a whole curtain and visible from where people walk; frames snap onto the wall at runtime. Re-check them if you
+change the house (see [docs/GALLERY.md](docs/GALLERY.md)).
 
-Tests: `cd server && npm test` runs the server unit tests (key handling, reconnect, relay, and TTL cleanup).
+Tests: `cd server && npm test` runs the server unit tests (key handling, reconnect, relay, TTL cleanup, curtain sync).
+
+Development builds expose `__three`, `__gallery` and `__teleport(x, y, z, yaw)` on `window` for testing and profiling;
+production builds strip them.
 
 Verified so far: the server unit tests pass, the client builds, and `npm run assets` rebuilds the house end to end. In a
 browser, both players load into the Sponza house with the real avatars, and the guest's movement reaches the host's screen. Walking

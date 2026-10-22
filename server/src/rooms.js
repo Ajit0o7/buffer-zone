@@ -4,6 +4,7 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto
 const KEY_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const KEY_LENGTH = 8;
 const EMPTY_ROOM_TTL_MS = 60_000;
+const MAX_CURTAINS_PER_ROOM = 500; // bounds memory if a client sends junk ids
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const newToken = () => randomBytes(24).toString('base64url');
@@ -57,6 +58,7 @@ export function createRoomStore({ ttlMs = EMPTY_ROOM_TTL_MS } = {}) {
         id: randomBytes(12).toString('base64url'),
         keyHash: sha256(key),
         slots: { host: newSlot(), guest: newSlot() },
+        curtains: new Map(), // painting id -> true (held open) | false (held closed)
         cleanupTimer: null,
       };
       room.slots.host.token = newToken();
@@ -131,6 +133,29 @@ export function createRoomStore({ ttlMs = EMPTY_ROOM_TTL_MS } = {}) {
       slot.state = sample;
       slot.dirty = true;
       return true;
+    },
+
+    /**
+     * Records a curtain override for the socket's room. open: true | false | null (null clears it).
+     * Returns the partner's socket id to relay to (or null), or undefined if the socket has no seat
+     * or the room is at its curtain limit.
+     */
+    setCurtain(socketId, id, open) {
+      const link = linkBySocket.get(socketId);
+      if (!link) return undefined;
+      const room = rooms.get(link.roomId);
+      if (open === null) room.curtains.delete(id);
+      else if (room.curtains.has(id) || room.curtains.size < MAX_CURTAINS_PER_ROOM) room.curtains.set(id, open);
+      else return undefined;
+      const peer = room.slots[link.role === 'host' ? 'guest' : 'host'];
+      return peer.connected ? peer.socketId : null;
+    },
+
+    /** The room's curtain overrides as a plain object, for a player joining or resuming. */
+    curtainSnapshot(socketId) {
+      const link = linkBySocket.get(socketId);
+      if (!link) return {};
+      return Object.fromEntries(rooms.get(link.roomId).curtains);
     },
 
     /** Calls fn(peerSocketId, state) for every seat whose state changed since the last flush. */

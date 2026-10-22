@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeKey, sanitizeState, WORLD_BOUND, MAX_SPEED } from '../src/validate.js';
+import { normalizeKey, sanitizeCurtain, sanitizeState, WORLD_BOUND, MAX_SPEED } from '../src/validate.js';
 
 test('normalizeKey accepts dashes, spaces and lowercase', () => {
   assert.equal(normalizeKey('abcd-efgh'), 'ABCDEFGH');
@@ -33,4 +33,19 @@ test('sanitizeState rejects non-numeric or wrong-length positions', () => {
   assert.equal(sanitizeState({ p: [0, NaN, 0] }), null);
   assert.equal(sanitizeState({ p: ['1', 0, 0] }), null);
   assert.equal(sanitizeState(null), null);
+});
+
+test('sanitizeCurtain accepts open, closed and cleared', () => {
+  assert.deepEqual(sanitizeCurtain({ id: 'the-yes', open: true }), { id: 'the-yes', open: true });
+  assert.deepEqual(sanitizeCurtain({ id: 'a_1', open: false }), { id: 'a_1', open: false });
+  assert.deepEqual(sanitizeCurtain({ id: 'a', open: null }), { id: 'a', open: null });
+});
+
+test('sanitizeCurtain rejects bad ids and values', () => {
+  assert.equal(sanitizeCurtain({ id: '', open: true }), null);
+  assert.equal(sanitizeCurtain({ id: 'x'.repeat(65), open: true }), null);
+  assert.equal(sanitizeCurtain({ id: '../etc', open: true }), null);
+  assert.equal(sanitizeCurtain({ id: 'a', open: 'yes' }), null);
+  assert.equal(sanitizeCurtain({ id: 'a' }), null);
+  assert.equal(sanitizeCurtain(null), null);
 });

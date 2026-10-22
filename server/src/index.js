@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { Server } from 'socket.io';
 import { createRoomStore } from './rooms.js';
-import { normalizeKey, sanitizeState } from './validate.js';
+import { normalizeKey, sanitizeCurtain, sanitizeState } from './validate.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173').split(',').map((o) => o.trim());
@@ -9,6 +9,10 @@ const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173').sp
 const FANOUT_HZ = 20; // server -> partner snapshot rate
 const MIN_UPDATE_MS = 15; // inbound cap per socket (~66 Hz); excess packets are dropped
 const MAX_FAILED_JOINS = 8; // per socket, before further join attempts are refused
+// Curtain clicks are human-paced: a token bucket allows short bursts (opening several at once)
+// but caps the sustained rate at 10 per second per socket.
+const CURTAIN_BURST = 20;
+const CURTAIN_REFILL_PER_MS = 10 / 1000;
 
 const httpServer = http.createServer((req, res) => {
   if (req.url === '/health') return res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
@@ -25,6 +29,20 @@ const io = new Server(httpServer, {
 const store = createRoomStore();
 const failedJoins = new Map();
 const lastUpdateAt = new Map();
+const curtainBuckets = new Map(); // socket.id -> { tokens, at }
+
+function takeCurtainToken(socketId, now) {
+  const bucket = curtainBuckets.get(socketId) ?? { tokens: CURTAIN_BURST, at: now };
+  bucket.tokens = Math.min(CURTAIN_BURST, bucket.tokens + (now - bucket.at) * CURTAIN_REFILL_PER_MS);
+  bucket.at = now;
+  curtainBuckets.set(socketId, bucket);
+  if (bucket.tokens < 1) return false;
+  bucket.tokens -= 1;
+  return true;
+}
+
+/** A player who joins or resumes gets the room's held-open and held-closed curtains. */
+const sendGalleryState = (socket) => socket.emit('gallery:state', store.curtainSnapshot(socket.id));
 
 io.on('connection', (socket) => {
   // Host: create a room and receive the secret key (shown once, only to the host).
@@ -48,6 +66,7 @@ io.on('connection', (socket) => {
 
     if (result.peerSocketId) io.to(result.peerSocketId).emit('room:peer', { connected: true });
     ack?.({ ok: true, ...result });
+    sendGalleryState(socket);
   });
 
   // Anyone: re-attach to a seat after a refresh or network drop, using the token they were given.
@@ -57,6 +76,17 @@ io.on('connection', (socket) => {
 
     if (result.peerSocketId) io.to(result.peerSocketId).emit('room:peer', { connected: true });
     ack?.({ ok: true, ...result });
+    sendGalleryState(socket);
+  });
+
+  // A curtain was clicked open or closed: remember it for the room and mirror it to the partner.
+  socket.on('gallery:curtain', (payload) => {
+    if (!takeCurtainToken(socket.id, Date.now())) return;
+
+    const event = sanitizeCurtain(payload);
+    if (!event) return;
+    const peerSocketId = store.setCurtain(socket.id, event.id, event.open);
+    if (peerSocketId) io.to(peerSocketId).emit('gallery:curtain', event);
   });
 
   // High-frequency path: fire-and-forget, no ack, volatile so stale packets are never queued.
@@ -72,6 +102,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     failedJoins.delete(socket.id);
     lastUpdateAt.delete(socket.id);
+    curtainBuckets.delete(socket.id);
     const detached = store.detach(socket.id);
     if (detached?.peerSocketId) io.to(detached.peerSocketId).emit('room:peer', { connected: false });
   });
