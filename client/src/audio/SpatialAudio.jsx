@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Audio, AudioContext, AudioListener, AudioLoader, Object3D, PositionalAudio } from 'three';
+import { Audio, AudioContext, AudioListener, AudioLoader, Object3D, PositionalAudio, Vector3 } from 'three';
 import { roomAt } from '../world/rooms';
-import { localMotion, remoteTarget } from '../world/shared';
+import { localMotion, remote } from '../world/shared';
+import { INTERP_DELAY_MS } from '../world/config';
 import { damp } from '../utils/math';
 
 const MUSIC_URL = '/audio/romantic-theme.ogg';
@@ -34,9 +35,16 @@ export default function SpatialAudio() {
     return sound;
   }, [listener]);
   const stride = useRef(0);
+  const partner = useMemo(() => ({ position: new Vector3(), yaw: 0, speed: 0, anim: 'idle' }), []);
 
   useEffect(() => {
     camera.add(listener);
+    // Starts the music once audio is unlocked. Safe to call repeatedly.
+    const startMusic = () => {
+      AudioContext.getContext().resume().then(() => {
+        if (!music.isPlaying && music.buffer) music.play();
+      });
+    };
     anchor.add(footstep); // the sound follows the anchor, which tracks the partner
     let cancelled = false;
     Promise.all([loadBuffer(MUSIC_URL), loadBuffer(FOOTSTEP_URL)])
@@ -47,20 +55,16 @@ export default function SpatialAudio() {
         music.setVolume(0);
         footstep.setBuffer(stepBuffer);
         setBuffers(true);
+        startMusic();
       })
       .catch((err) => console.warn('[audio] could not load clips', err));
 
-    // Start the music on the first gesture if the context was still suspended.
-    const start = () => {
-      AudioContext.getContext().resume().then(() => {
-        if (!music.isPlaying && music.buffer) music.play();
-      });
-    };
-    window.addEventListener('pointerdown', start, { once: true });
+    startMusic();
+    window.addEventListener('pointerdown', startMusic, { once: true });
 
     return () => {
       cancelled = true;
-      window.removeEventListener('pointerdown', start);
+      window.removeEventListener('pointerdown', startMusic);
       camera.remove(listener);
       anchor.remove(footstep);
       music.stop();
@@ -74,10 +78,12 @@ export default function SpatialAudio() {
     if (music.buffer) music.setVolume(damp(music.getVolume(), target, 2, dt));
 
     // Footsteps for the partner, cadence proportional to their speed.
-    anchor.position.copy(remoteTarget.position);
-    if (!buffers || !footstep.buffer || !remoteTarget.hasData) return;
-    if (remoteTarget.speed > 0.4) {
-      stride.current += (remoteTarget.speed / STEP_LENGTH) * dt;
+    const sample = remote.sample(performance.now() - INTERP_DELAY_MS, partner);
+    if (!sample) return;
+    anchor.position.copy(partner.position);
+    if (!buffers || !footstep.buffer) return;
+    if (partner.speed > 0.4) {
+      stride.current += (partner.speed / STEP_LENGTH) * dt;
       if (stride.current >= 1) {
         stride.current -= 1;
         if (footstep.isPlaying) footstep.stop();

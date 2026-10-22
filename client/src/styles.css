@@ -170,6 +170,31 @@ button:disabled {
   margin-top: 0.25rem;
 }
 
+.hint {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--muted);
+  background: var(--panel);
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  max-width: calc(100% - 32px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.loading {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #0b0a09;
+  z-index: 10;
+}
+
 .loader {
   color: var(--muted);
   font-size: 1.1rem;

@@ -7,6 +7,7 @@ the guest (the girl) enters it and both walk through a photoreal house together.
 buffer-zone/
 ├── client/                React Three Fiber + Drei + Rapier + Vite
 │   ├── index.html
+│   ├── .env.example       VITE_SERVER_URL
 │   ├── vite.config.js     code-splitting for the 3D engine
 │   ├── public/            static, cacheable assets (served as-is)
 │   │   ├── models/        mansion.glb, mansion.collision.glb, avatars/{boy,girl}.glb
@@ -16,12 +17,14 @@ buffer-zone/
 │   │   └── draco/gltf/    Draco decoder (copied from three on npm install)
 │   └── src/
 │       ├── main.jsx · App.jsx · styles.css
-│       ├── lobby/         Lobby.jsx: create room / enter key
+│       ├── lobby/         Lobby.jsx: create room / enter key (shows offline state)
+│       ├── ui/            ErrorBoundary.jsx: a failed asset shows a message, not a blank page
 │       ├── net/           socket.js: Socket.io client + event bridge
 │       ├── state/         session.js: zustand (UI state, reconnect token)
 │       ├── world/         config.js (tuning + asset URLs), shared.js (per-frame state), rooms.js (zones)
 │       ├── input/         useKeys.js
-│       ├── scene/         GameScene.jsx (Canvas), Lighting.jsx (IBL + post), Mansion.jsx (lazy GLB + colliders)
+│       ├── scene/         GameScene.jsx (Canvas), Lighting.jsx (IBL + post), Mansion.jsx (lazy GLB + colliders),
+│       │                  Loading.jsx (DOM progress overlay)
 │       ├── avatar/        Avatar.jsx (blend tree), LocalPlayer.jsx (physics + camera + sync), RemotePlayer.jsx
 │       ├── gallery/       PhotoFrames.jsx (spotlight + proximity), photos.js (your data)
 │       ├── audio/         SpatialAudio.jsx (room music + positional footsteps)
@@ -29,8 +32,10 @@ buffer-zone/
 │       └── utils/         math.js (damped smoothing)
 ├── server/                Node 20+ · Socket.io 4
 │   └── src/
-│       ├── index.js       HTTP + Socket.io, validation, rate limits, 20 Hz fan-out
-│       └── rooms.js       room registry: keys hashed, tokens for reconnect, cleanup
+│       ├── index.js       HTTP + Socket.io, rate limits, 20 Hz fan-out, graceful shutdown
+│       ├── rooms.js       room registry: keys hashed, tokens for reconnect, cleanup
+│       └── validate.js    pure input checks: key normalisation, payload sanitising
+└── server/test/           node:test unit tests (run: npm test)
 └── scripts/copy-draco.mjs
 ```
 
@@ -59,7 +64,7 @@ Single Node process, in-memory rooms (`server/src/rooms.js`).
 
 - **Room key:** 8 characters from a 31-symbol alphabet with no look-alikes. ~40 bits of entropy.
   Only a SHA-256 hash is stored; the plaintext key goes to the host once.
-- **Join protection:** per-socket cap of 8 wrong keys, then the socket is refused.
+- **Join protection:** per-socket cap of 8 wrong keys, then the socket is refused. Keys are normalised, so `abcd-efgh`, `ABCDEFGH` and `abcd efgh` all work.
 - **Reconnect:** each seat has a 24-byte random token (in `sessionStorage` only) so a refresh reclaims your seat.
   Cleanup of an empty room runs after 60 s.
 - **Sync:** the client sends `player:update` at 20 Hz (`volatile`). The server validates and clamps every
@@ -78,7 +83,7 @@ Single Node process, in-memory rooms (`server/src/rooms.js`).
 | S→C | `room:peer` | `{ connected }` | Partner joined or left |
 
 Bandwidth: about 60 bytes × 20 Hz × 2 directions ≈ 2.4 KB/s per player. Latency is one network RTT plus
-interpolation delay (~70 ms with `POSITION_LAMBDA = 14`).
+the interpolation delay (`INTERP_DELAY_MS = 110` in `world/config.js`).
 
 ### 1.4 Motion and animation
 
@@ -86,7 +91,12 @@ interpolation delay (~70 ms with `POSITION_LAMBDA = 14`).
   stop it through the physics solver.
 - **Blend tree:** a 1-D tree on ground speed, idle → walk (2.2 m/s) → run (4.8 m/s), with linear cross-weights
   that sum to 1. Weights are damped every frame (`λ = 8`), so transitions never pop.
-- **Partner:** visual only, interpolated toward the latest server sample. Uses the same blend tree from the speed it receives.
+- **Partner:** visual only, no collider. Each server snapshot is stamped with the local receive time, and the partner is
+  rendered `INTERP_DELAY_MS` in the past, blending between the two snapshots that bracket that moment. This needs no clock
+  sync between machines, and it holds the last pose if packets stop instead of extrapolating.
+- **Camera:** a third-person follow camera. A Rapier ray from the look point to the camera pulls the camera in when a wall
+  is in the way, so the view never clips through the house.
+- **Phase lock:** while walk and run blend, the run clip is set to walk's point in its cycle, so the legs don't ghost.
 
 ### 1.5 Rendering pipeline
 
@@ -96,7 +106,9 @@ Key light (shadow) ─┼─► Scene ─► SSAO ─► Bloom ─► DepthOfFie
 Warm practicals    ─┘
 ```
 
-Quality tiers are in `scene/Lighting.jsx`. The `quality="low"` path drops SSAO and DoF (the two most expensive passes).
+The environment is procedural by default (window and lamp light panels), so it works offline. Add a CC0 HDRI and pass
+`hdri="/hdri/room.hdr"` for a captured environment. Quality tiers are in `scene/Lighting.jsx`: on devices with fewer
+than 4 logical cores, SSAO and DoF are dropped automatically.
 
 ### 1.6 Interaction and audio
 
@@ -105,7 +117,8 @@ Quality tiers are in `scene/Lighting.jsx`. The `quality="low"` path drops SSAO a
 - **Room music:** each zone in `world/rooms.js` has a music weight. Volume eases toward it (λ = 2).
 - **Partner footsteps:** a `PositionalAudio` anchored to the partner. Cadence = speed ÷ 0.9 m per stride,
   so it speeds up on a run and stops when they stop. Falls off with distance (inverse model, 2 m reference).
-- **Autoplay:** the Enter click in the lobby calls `AudioContext.resume()`. The music starts on that gesture.
+- **Autoplay:** the Create/Join click in the lobby calls `AudioContext.resume()`. Music starts as soon as it has loaded, and on
+  the next click if the browser still blocks it.
 
 ---
 
@@ -191,10 +204,16 @@ cd client && npm install && npm run dev        # http://localhost:5173
 
 Both tabs can be on one machine for testing: one tab creates a room, the other joins with the key.
 
-Assets: the starter code expects the GLBs and photos listed in the tree above. Until you add them, the scene
-will show a loader and then an error, because the models are missing. The lobby, networking and server work without them.
+Assets: the starter code expects the GLBs and photos listed in the tree above. Until you add them, the lobby and networking
+work, and the scene shows a readable message from the error boundary instead of a blank page.
 
-Environment variables:
+Tests: `cd server && npm test` runs the server unit tests (key handling, reconnect, relay, and TTL cleanup).
+
+Verified so far: the server unit tests pass, the client builds, and a browser run covered the lobby flow end to end (create,
+wrong-key rejection, guest join, and the host's key appearing on screen). **Not yet verified:** the 3D scene itself, because
+the models and audio are not in the repo.
+
+Environment variables (see `client/.env.example`):
 - `client/.env.local`: `VITE_SERVER_URL=https://your-server.example.com`
 - server: `PORT`, `CLIENT_ORIGIN=https://your-site.example.com` (comma-separated for more than one)
 
@@ -202,9 +221,11 @@ Environment variables:
 
 ## 5. Roadmap
 
-1. **Assets in** — drop the mansion, avatars and clips into `public/`, then tune the collision mesh and room zones.
-2. **Camera collision** — raycast from the orbit point and pull the camera in before it clips through walls.
-3. **Interpolation buffer** — buffer 2–3 snapshots and interpolate on server time, for smoother remote motion under jitter.
-4. **Phase sync** — align walk and run clip phases so cross-fades don't ghost.
-5. **Hosting** — static client on a CDN with long cache lifetimes for `/models` and `/draco` (use content hashes). Server on a single small VM or container with WebSocket support.
-6. **Privacy** — add a server-side expiry for rooms, and consider a rotated key if the room sits idle.
+Done in this pass: camera occlusion, snapshot interpolation, walk/run phase lock, the offline environment, the error boundary,
+the lobby's offline state, key normalisation, unit tests, and graceful shutdown.
+
+1. **Assets in** — drop the mansion, avatars, clips and audio into `public/`, then tune the collision mesh and room zones against the real layout.
+2. **Touch controls** — the starter is keyboard and mouse only. Add a virtual joystick for phones.
+3. **Per-room streaming** — split the house into zone GLBs and load neighbouring zones at their doors.
+4. **Hosting** — static client on a CDN with long cache lifetimes for `/models`, `/draco` and `/hdri` (content-hashed). Server on one small container with WebSocket support.
+5. **Privacy** — add server-side room expiry, and a rotated key if a room sits idle for a long time.

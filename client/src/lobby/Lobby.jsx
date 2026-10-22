@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AudioContext } from 'three';
 import { socket } from '../net/socket';
 import { useSession } from '../state/session';
@@ -15,6 +15,18 @@ export default function Lobby() {
   const [joinKey, setJoinKey] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  // Tell the guest when the server is unreachable, instead of letting Join hang silently.
+  useEffect(() => {
+    const onError = () => setError('Cannot reach the house right now. Check your connection and try again.');
+    const onConnect = () => setError((msg) => (msg?.startsWith('Cannot reach') ? null : msg));
+    socket.on('connect_error', onError);
+    socket.on('connect', onConnect);
+    return () => {
+      socket.off('connect_error', onError);
+      socket.off('connect', onConnect);
+    };
+  }, []);
 
   // Browsers only allow audio after a user gesture; the click that enters the house counts.
   const unlockAudio = () => AudioContext.getContext().resume();
@@ -62,12 +74,13 @@ export default function Lobby() {
             id="room-key"
             value={joinKey}
             onChange={(e) => setJoinKey(e.target.value.toUpperCase())}
+            inputMode="text"
             maxLength={16}
             autoComplete="off"
             spellCheck={false}
             placeholder="XXXX-XXXX"
           />
-          <button type="submit" disabled={busy || joinKey.trim().length < 4}>Join</button>
+          <button type="submit" disabled={busy || joinKey.replace(/[^A-Z0-9]/g, '').length < 4}>Join</button>
         </form>
       </section>
 

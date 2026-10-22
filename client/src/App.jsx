@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import Lobby from './lobby/Lobby';
 import Hud from './hud/Hud';
+import ErrorBoundary from './ui/ErrorBoundary';
 import { bindSocket, socket } from './net/socket';
 import { useSession } from './state/session';
 
@@ -23,9 +24,11 @@ export default function App() {
   // The lobby stays light; the 3D engine loads only once you've got a seat.
   return (
     <>
-      <Suspense fallback={null}>
-        <GameScene />
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <GameScene />
+        </Suspense>
+      </ErrorBoundary>
       <Hud />
     </>
   );
