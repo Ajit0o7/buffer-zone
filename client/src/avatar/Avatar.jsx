@@ -71,6 +71,13 @@ export default function Avatar({ url, motion, footOffset = 0 }) {
     if (actions.walk) actions.walk.timeScale = MathUtils.clamp(motion.speed / WALK_SPEED, 0.6, 1.4);
     if (actions.run) actions.run.timeScale = MathUtils.clamp(motion.speed / RUN_SPEED, 0.6, 1.4);
 
+    // Phase lock: while walk and run blend, put run's gait at walk's point in its cycle, so the legs don't ghost.
+    if (actions.walk && actions.run && w.walk > 0.01 && w.run > 0.01) {
+      const walkDuration = actions.walk.getClip().duration;
+      const runDuration = actions.run.getClip().duration;
+      actions.run.time = (actions.walk.time / walkDuration) * runDuration;
+    }
+
     if (root.current) root.current.rotation.y = motion.yaw;
   });
 

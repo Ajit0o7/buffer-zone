@@ -20,4 +20,8 @@ export const WALK_SPEED = 2.2; // m/s
 export const RUN_SPEED = 4.8; // m/s
 export const SEND_HZ = 20; // local -> server position rate
 
+// How far in the past the partner is rendered. One snapshot of headroom at 20 Hz hides normal jitter.
+// Raise it on bad connections; lower it for snappier motion.
+export const INTERP_DELAY_MS = 110;
+
 export const PHOTO_PROXIMITY = 2.6; // metres at which a frame lights up

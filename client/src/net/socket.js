@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 import { useSession } from '../state/session';
-import { remoteTarget } from '../world/shared';
+import { remote } from '../world/shared';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3001';
 
@@ -14,14 +14,7 @@ export const socket = io(SERVER_URL, {
 /** Wires socket events into the stores. Returns a cleanup function. */
 export function bindSocket() {
   const onPeer = ({ connected }) => useSession.getState().setPeerConnected(connected);
-
-  const onWorld = (sample) => {
-    remoteTarget.position.set(sample.p[0], sample.p[1], sample.p[2]);
-    remoteTarget.yaw = sample.r;
-    remoteTarget.speed = sample.v;
-    remoteTarget.anim = sample.a;
-    remoteTarget.hasData = true;
-  };
+  const onWorld = (sample) => remote.pushSnapshot(sample);
 
   // Runs on every (re)connect: if this tab already holds a seat, reclaim it.
   const onConnect = () => {
