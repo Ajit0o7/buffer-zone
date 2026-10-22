@@ -10,4 +10,5 @@ client/public/draco/
 client/public/models/**/*.glb
 client/public/animations/**/*.glb
 client/public/photos/**
+client/public/hdri/**
 client/public/audio/**

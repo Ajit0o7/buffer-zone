@@ -14,7 +14,7 @@ const UP = new Vector3(0, 1, 0);
 const CAMERA_DISTANCE = 4.2;
 const CAMERA_HEIGHT = 1.8;
 const CAMERA_CLEARANCE = 0.25; // keep the lens this far off the wall it hits
-const CAPSULE_HALF_HEIGHT = 0.45; // total capsule height = 2 * (half height + radius) = 1.5 m
+const CAPSULE_HALF_HEIGHT = 0.6; // total capsule height = 2 * (half height + radius) = 1.8 m, matching the avatars
 const CAPSULE_RADIUS = 0.3;
 const SEND_INTERVAL = 1 / SEND_HZ;
 
@@ -34,8 +34,10 @@ export default function LocalPlayer({ url }) {
   const { camera, gl } = useThree();
   const { world, rapier } = useRapier();
   const role = useSession((s) => s.role);
-  const spawnX = role === 'host' ? -1 : 1; // start side by side, not stacked
-  const cameraYaw = useRef(0);
+  // Start side by side across the nave (the open walkway runs along x), not stacked on one spot.
+  const spawnZ = role === 'host' ? -1 : 1;
+  // Start the camera looking down the nave: it sits along x, where the walkway is open, rather than inside the arcades.
+  const cameraYaw = useRef(Math.PI / 2);
   const sendTimer = useRef(0);
 
   // Pointer-lock mouse look. Only active once the canvas has been clicked.
@@ -109,7 +111,7 @@ export default function LocalPlayer({ url }) {
   return (
     <RigidBody
       ref={body}
-      position={[spawnX, CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS, 0]}
+      position={[0, CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS, spawnZ]}
       type="dynamic"
       colliders={false}
       lockRotations

@@ -5,12 +5,14 @@ export const AVATAR_URLS = {
   girl: '/models/avatars/girl.glb',
 };
 
-// Mixamo clips, each exported as a single-animation GLB retargeted to the avatar rig.
-export const ANIMATION_URLS = {
-  idle: '/animations/idle.glb',
-  walk: '/animations/walk.glb',
-  run: '/animations/run.glb',
-};
+// Both avatars are Mixamo rigs with the same bone names, so one file's clips drive either model.
+// The boy file carries the motion-capture clips; CLIP_NAMES maps our states to the names inside it.
+export const CLIP_SOURCE_URL = '/models/avatars/boy.glb';
+export const CLIP_NAMES = { idle: 'idle', walk: 'walk', run: 'run' };
+
+// Interior HDRI for image-based lighting (CC0, Poly Haven). Set to null for the procedural fallback.
+export const HDRI_URL = '/hdri/venice_sunset_1k.hdr';
+
 
 // The host is always the boy, the guest is always the girl.
 export const AVATAR_BY_ROLE = { host: 'boy', guest: 'girl' };

@@ -1,9 +1,9 @@
-// Axis-aligned zones in metres, Y-up. They must match the mansion layout in the GLB.
+// Zones in metres, Y-up, matched to the house (about x -15..15, z -9.5..9, floor at y = 0).
 // `music` is the relative background-music level for the zone (0..1).
 export const ROOMS = [
-  { id: 'entrance-hall', min: [-6, -1, -12], max: [6, 6, -4], music: 0.45 },
-  { id: 'bedroom', min: [-12, -1, -4], max: [-2, 6, 6], music: 1.0 },
-  { id: 'lounge', min: [4, -1, -4], max: [14, 6, 6], music: 0.3 },
+  { id: 'central-nave', min: [-6, -1, -4], max: [6, 12, 4], music: 0.5 },
+  { id: 'west-gallery', min: [-16, -1, -10], max: [-6, 12, 10], music: 0.9 },
+  { id: 'east-gallery', min: [6, -1, -10], max: [16, 12, 10], music: 1.0 },
 ];
 
 const inside = (p, room) =>

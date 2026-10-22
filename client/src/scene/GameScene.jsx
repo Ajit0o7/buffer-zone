@@ -3,7 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { Physics } from '@react-three/rapier';
 import { NoToneMapping } from 'three';
 import { useSession } from '../state/session';
-import { AVATAR_BY_ROLE, AVATAR_URLS, partnerRole } from '../world/config';
+import { AVATAR_BY_ROLE, AVATAR_URLS, HDRI_URL, partnerRole } from '../world/config';
 import Lighting from './Lighting';
 import LocalPlayer from '../avatar/LocalPlayer';
 import RemotePlayer from '../avatar/RemotePlayer';
@@ -32,7 +32,7 @@ export default function GameScene() {
         <color attach="background" args={['#0b0a09']} />
         {/* No fallback here: a DOM overlay (Loading) shows progress, so nothing 3D is drawn while loading */}
         <Suspense fallback={null}>
-          <Lighting quality={quality} />
+          <Lighting quality={quality} hdri={HDRI_URL} />
           <Physics gravity={[0, -9.81, 0]}>
             <Mansion />
             <LocalPlayer url={localUrl} />

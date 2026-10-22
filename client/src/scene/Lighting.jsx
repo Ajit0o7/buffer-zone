@@ -45,11 +45,6 @@ export default function Lighting({ quality = 'high', hdri = null }) {
         shadow-radius={6}
       />
 
-      {/* Warm practicals: fireplace, lamps. Later, map these to real light fixtures in the GLB. */}
-      <pointLight position={[-9, 2.4, -2]} color="#ffb36b" intensity={18} distance={14} decay={2} castShadow={ultra} shadow-mapSize={[512, 512]} />
-      <pointLight position={[9, 2.2, 1]} color="#ffa552" intensity={14} distance={12} decay={2} />
-      <pointLight position={[0, 3.2, -8]} color="#ffd9a8" intensity={10} distance={10} decay={2} />
-
       {/* SSAO needs the normal pass; without it the whole frame goes dark */}
       <EffectComposer multisampling={0} enableNormalPass={ultra}>
         {ultra && <SSAO samples={21} radius={0.08} intensity={22} luminanceInfluence={0.5} />}

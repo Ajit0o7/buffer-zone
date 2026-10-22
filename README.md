@@ -10,10 +10,10 @@ buffer-zone/
 │   ├── .env.example       VITE_SERVER_URL
 │   ├── vite.config.js     code-splitting for the 3D engine
 │   ├── public/            static, cacheable assets (served as-is)
-│   │   ├── models/        mansion.glb, mansion.collision.glb, avatars/{boy,girl}.glb
-│   │   ├── animations/    idle.glb, walk.glb, run.glb (one clip each, retargeted)
-│   │   ├── photos/        WebP/KTX2 photos referenced by gallery/photos.js
-│   │   ├── audio/         romantic-theme.ogg, footstep.ogg
+│   │   ├── models/        mansion.glb (Sponza interior), avatars/{boy,girl}.glb (Mixamo rigs)
+│   │   ├── hdri/          venice_sunset_1k.hdr (image-based lighting)
+│   │   ├── photos/        your photos, referenced by gallery/photos.js (placeholders until you add yours)
+│   │   ├── audio/         footstep.wav, romantic-theme.wav (placeholders until you add yours)
 │   │   └── draco/gltf/    Draco decoder (copied from three on npm install)
 │   └── src/
 │       ├── main.jsx · App.jsx · styles.css
@@ -204,23 +204,33 @@ cd client && npm install && npm run dev        # http://localhost:5173
 
 Both tabs can be on one machine for testing: one tab creates a room, the other joins with the key.
 
-Assets: the starter code expects the GLBs, photos and audio listed in the tree above. To see the scene immediately, generate
-placeholder ("stand-in") assets:
+Assets: download and build the house, avatars and lighting with:
 
 ```bash
-cd client && npm run standins
+cd client && npm run assets
 ```
 
-This writes a blocky house, two box-built avatars with idle, walk and run clips, three gradient photos and two audio clips into
-`client/public/`. Each file has the same path your real assets will use, so you can replace them one at a time.
+This fetches Khronos **Sponza** (a stone palace interior, about 52 MB, packed to about 11 MB with Draco and WebP), two
+Mixamo characters with motion-capture idle, walk and run clips (Xbot and Michelle, from the three.js examples), and a Venice
+sunset HDRI. The house is also its own collider, so walls, columns and floors stop the player.
+
+Licences: these files are third-party. Sponza is under the CRYENGINE Limited License Agreement, and the Mixamo characters are
+under Mixamo's terms. Both stay in your local `client/public/`, which the `.gitignore` excludes, and should not be published
+without checking those terms. The HDRI is from Poly Haven (CC0).
+
+The photos and music are still placeholders. Run `cd client && npm run standins` to regenerate them, and replace them with
+your own files, keeping the same paths. The frame positions in `gallery/photos.js` were found with a line-of-sight check from a
+standing point in the nave, so move them when you change the house.
 
 Tests: `cd server && npm test` runs the server unit tests (key handling, reconnect, relay, and TTL cleanup).
 
-Verified so far: the server unit tests pass, the client builds, and a browser run covered the lobby flow end to end (create,
-wrong-key rejection, guest join, and the host's key appearing on screen). With the stand-in assets, both players load into the
-house, the guest walks, and the partner's avatar updates on the host's screen. Note that this sandbox renders at about 1.4 fps in
-software, so motion looks choppy here; it should run smoothly on a real GPU. Physics, lighting and the photo gallery are checked by
-screenshots, not by timing.
+Verified so far: the server unit tests pass, the client builds, and `npm run assets` rebuilds the house end to end. In a
+browser, both players load into the Sponza house with the real avatars, and the guest's movement reaches the host's screen. Walking
+to the west gallery shows a photo frame with its caption. Software rendering here runs at about 1.4 fps, so motion looks choppy in
+this sandbox; it should run smoothly on a real GPU. Lighting, physics and the photo gallery are checked by screenshots, not by timing.
+
+Not realistic yet: the Mixamo characters are stylised mannequins, not photoreal people. For photoreal avatars, export a
+Ready Player Me file (or similar) at `avatars/boy.glb` and `avatars/girl.glb`, with its own rig and clips.
 
 Environment variables (see `client/.env.example`):
 - `client/.env.local`: `VITE_SERVER_URL=https://your-server.example.com`
@@ -233,7 +243,8 @@ Environment variables (see `client/.env.example`):
 Done in this pass: camera occlusion, snapshot interpolation, walk/run phase lock, the offline environment, the error boundary,
 the lobby's offline state, key normalisation, unit tests, and graceful shutdown.
 
-1. **Assets in** — drop the mansion, avatars, clips and audio into `public/`, then tune the collision mesh and room zones against the real layout.
+1. **Photoreal avatars** — replace the Mixamo mannequins with photoreal characters that have walk and run clips.
+   The house is a palace, so the photos and room zones may need tuning to your own layout.
 2. **Touch controls** — the starter is keyboard and mouse only. Add a virtual joystick for phones.
 3. **Per-room streaming** — split the house into zone GLBs and load neighbouring zones at their doors.
 4. **Hosting** — static client on a CDN with long cache lifetimes for `/models`, `/draco` and `/hdri` (content-hashed). Server on one small container with WebSocket support.

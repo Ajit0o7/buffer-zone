@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useAnimations, useGLTF } from '@react-three/drei';
 import { MathUtils } from 'three';
-import { ANIMATION_URLS, RUN_SPEED, WALK_SPEED } from '../world/config';
+import { CLIP_NAMES, CLIP_SOURCE_URL, RUN_SPEED, WALK_SPEED } from '../world/config';
 import { damp } from '../utils/math';
 
-const CLIP_NAMES = ['idle', 'walk', 'run'];
+const STATES = Object.keys(CLIP_NAMES); // ['idle', 'walk', 'run']
 
 /**
  * 1-D blend tree driven by ground speed:
@@ -22,26 +22,24 @@ export function blendWeights(speed) {
 }
 
 /**
- * @param url        avatar GLB (boy/girl), rigged to the shared skeleton
+ * @param url        avatar model (boy or girl), a Mixamo rig
  * @param motion     object with { speed, yaw }, read every frame (never via React state)
  * @param footOffset vertical offset so the model's feet sit on the physics capsule's base
  */
 export default function Avatar({ url, motion, footOffset = 0 }) {
   const root = useRef();
   const { scene } = useGLTF(url);
-  const idle = useGLTF(ANIMATION_URLS.idle);
-  const walk = useGLTF(ANIMATION_URLS.walk);
-  const run = useGLTF(ANIMATION_URLS.run);
+  const source = useGLTF(CLIP_SOURCE_URL);
 
-  // Clones so the cached GLTF clips can be renamed and reused safely across avatars.
+  // Clones so the cached clips can be renamed to our state names without touching the shared GLTF.
   const clips = useMemo(
     () =>
-      [idle, walk, run].map((gltf, i) => {
-        const clip = gltf.animations[0].clone();
-        clip.name = CLIP_NAMES[i];
+      STATES.map((state) => {
+        const clip = source.animations.find((a) => a.name === CLIP_NAMES[state]).clone();
+        clip.name = state;
         return clip;
       }),
-    [idle, walk, run],
+    [source],
   );
 
   const { actions } = useAnimations(clips, root);
@@ -55,14 +53,14 @@ export default function Avatar({ url, motion, footOffset = 0 }) {
       }
     });
     // Start every clip playing; the weights decide what the viewer actually sees.
-    for (const name of CLIP_NAMES) actions[name]?.reset().play();
+    for (const name of STATES) actions[name]?.reset().play();
   }, [scene, actions]);
 
   useFrame((_, dt) => {
     const target = blendWeights(motion.speed);
     const w = weights.current;
 
-    for (const name of CLIP_NAMES) {
+    for (const name of STATES) {
       w[name] = damp(w[name], target[name], 8, dt); // smooth transitions, no popping
       actions[name]?.setEffectiveWeight(w[name]);
     }
