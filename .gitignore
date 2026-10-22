@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+client/public/draco/
+*.log
+.DS_Store
+# Large binary assets: keep them in Git LFS or a private bucket, not plain Git
+client/public/models/**/*.glb
+client/public/animations/**/*.glb
+client/public/photos/**
+client/public/audio/**
