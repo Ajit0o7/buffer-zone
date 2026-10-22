@@ -5,6 +5,7 @@ import { Vector3 } from 'three';
 import Avatar from './Avatar';
 import { useKeys } from '../input/useKeys';
 import { socket } from '../net/socket';
+import { useSession } from '../state/session';
 import { RUN_SPEED, SEND_HZ, WALK_SPEED } from '../world/config';
 import { localMotion } from '../world/shared';
 import { damp, dampAngle } from '../utils/math';
@@ -32,6 +33,8 @@ export default function LocalPlayer({ url }) {
   const keys = useKeys();
   const { camera, gl } = useThree();
   const { world, rapier } = useRapier();
+  const role = useSession((s) => s.role);
+  const spawnX = role === 'host' ? -1 : 1; // start side by side, not stacked
   const cameraYaw = useRef(0);
   const sendTimer = useRef(0);
 
@@ -106,7 +109,7 @@ export default function LocalPlayer({ url }) {
   return (
     <RigidBody
       ref={body}
-      position={[0, CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS, 0]}
+      position={[spawnX, CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS, 0]}
       type="dynamic"
       colliders={false}
       lockRotations

@@ -6,8 +6,8 @@ import { localMotion, remote } from '../world/shared';
 import { INTERP_DELAY_MS } from '../world/config';
 import { damp } from '../utils/math';
 
-const MUSIC_URL = '/audio/romantic-theme.ogg';
-const FOOTSTEP_URL = '/audio/footstep.ogg';
+const MUSIC_URL = '/audio/romantic-theme.wav';
+const FOOTSTEP_URL = '/audio/footstep.wav';
 const MUSIC_BASE_VOLUME = 0.55;
 const STEP_LENGTH = 0.9; // metres per footstep, sets the cadence from the partner's speed
 

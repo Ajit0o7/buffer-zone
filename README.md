@@ -204,14 +204,23 @@ cd client && npm install && npm run dev        # http://localhost:5173
 
 Both tabs can be on one machine for testing: one tab creates a room, the other joins with the key.
 
-Assets: the starter code expects the GLBs and photos listed in the tree above. Until you add them, the lobby and networking
-work, and the scene shows a readable message from the error boundary instead of a blank page.
+Assets: the starter code expects the GLBs, photos and audio listed in the tree above. To see the scene immediately, generate
+placeholder ("stand-in") assets:
+
+```bash
+cd client && npm run standins
+```
+
+This writes a blocky house, two box-built avatars with idle, walk and run clips, three gradient photos and two audio clips into
+`client/public/`. Each file has the same path your real assets will use, so you can replace them one at a time.
 
 Tests: `cd server && npm test` runs the server unit tests (key handling, reconnect, relay, and TTL cleanup).
 
 Verified so far: the server unit tests pass, the client builds, and a browser run covered the lobby flow end to end (create,
-wrong-key rejection, guest join, and the host's key appearing on screen). **Not yet verified:** the 3D scene itself, because
-the models and audio are not in the repo.
+wrong-key rejection, guest join, and the host's key appearing on screen). With the stand-in assets, both players load into the
+house, the guest walks, and the partner's avatar updates on the host's screen. Note that this sandbox renders at about 1.4 fps in
+software, so motion looks choppy here; it should run smoothly on a real GPU. Physics, lighting and the photo gallery are checked by
+screenshots, not by timing.
 
 Environment variables (see `client/.env.example`):
 - `client/.env.local`: `VITE_SERVER_URL=https://your-server.example.com`

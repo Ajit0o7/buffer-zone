@@ -28,7 +28,7 @@ export default function Mansion() {
   return (
     <>
       <primitive object={visual.scene} />
-      <RigidBody type="fixed" colliders="trimesh" friction={0.8}>
+      <RigidBody type="fixed" colliders="trimesh" includeInvisible friction={0.8}>
         <primitive object={collision.scene} visible={false} />
       </RigidBody>
     </>

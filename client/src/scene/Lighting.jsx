@@ -50,10 +50,11 @@ export default function Lighting({ quality = 'high', hdri = null }) {
       <pointLight position={[9, 2.2, 1]} color="#ffa552" intensity={14} distance={12} decay={2} />
       <pointLight position={[0, 3.2, -8]} color="#ffd9a8" intensity={10} distance={10} decay={2} />
 
-      <EffectComposer multisampling={0}>
+      {/* SSAO needs the normal pass; without it the whole frame goes dark */}
+      <EffectComposer multisampling={0} enableNormalPass={ultra}>
         {ultra && <SSAO samples={21} radius={0.08} intensity={22} luminanceInfluence={0.5} />}
         <Bloom intensity={ultra ? 0.35 : 0.25} luminanceThreshold={ultra ? 0.85 : 0.9} luminanceSmoothing={0.2} mipmapBlur />
-        {ultra && <DepthOfField focusDistance={0.02} focalLength={0.04} bokehScale={2.2} />}
+        {ultra && <DepthOfField focusDistance={0.022} focalLength={0.006} bokehScale={1} />}
         <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
       </EffectComposer>
     </>
