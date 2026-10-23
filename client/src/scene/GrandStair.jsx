@@ -160,7 +160,11 @@ export default function GrandStair({ stoneMap = null }) {
   }, [parts, assets]);
 
   const lz = (LANDING.south + LANDING.north) / 2;
-  const landingHalf = [(LANDING.east - LANDING.west) / 2, LANDING.thickness / 2, (LANDING.north - LANDING.south) / 2];
+  // The landing's collider starts where the ramp reaches the landing's height (half a tread past its visible edge),
+  // so there is no lip at the top of the flight: a capsule can't climb even a 9 cm edge while it is also on the slope,
+  // and the player used to stall half a metre short of the landing.
+  const landingStart = LANDING.west + RUN / 2;
+  const landingHalf = [(LANDING.east - landingStart) / 2, LANDING.thickness / 2, (LANDING.north - LANDING.south) / 2];
   const sideRail = (z) => (
     <CuboidCollider args={[(LANDING.east - LANDING.west) / 2, 0.55, 0.05]} position={[(LANDING.west + LANDING.east) / 2, LANDING.top + 0.55, z]} />
   );
@@ -171,7 +175,7 @@ export default function GrandStair({ stoneMap = null }) {
         <ConvexHullCollider args={[flightHull()]} />
         <ConvexHullCollider args={[railHull(-1)]} />
         <ConvexHullCollider args={[railHull(1)]} />
-        <CuboidCollider args={landingHalf} position={[(LANDING.west + LANDING.east) / 2, LANDING.top - LANDING.thickness / 2, lz]} />
+        <CuboidCollider args={landingHalf} position={[(landingStart + LANDING.east) / 2, LANDING.top - LANDING.thickness / 2, lz]} />
         <ConvexHullCollider args={[downHull()]} />
         {/* The landing's open edges: west, beside the flight, and both ends */}
         <CuboidCollider args={[0.05, 0.55, (-HALF_WIDTH - LANDING.south) / 2]} position={[LANDING.west + 0.06, LANDING.top + 0.55, (LANDING.south - HALF_WIDTH) / 2]} />
