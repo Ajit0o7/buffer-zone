@@ -90,6 +90,9 @@ export default function LocalPlayer({ avatarId }) {
   const spawn = useRef([-3, CAPSULE.center + 0.05, role === 'host' ? -1.5 : 1.5]).current;
   // Start behind the player, looking east up the nave toward the grand stair.
   const cameraYaw = useRef(-Math.PI / 2);
+  // The follow camera's orbit: the mouse sets where it should be (`yaw` above, `pitch`, `distance`); what the
+  // camera shows eases toward it over a few milliseconds, which takes the jitter out of a mouse without lag.
+  const view = useRef({ pitch: CAMERA.pitch, distance: CAMERA.distance, yaw: -Math.PI / 2, pitchNow: CAMERA.pitch, distanceNow: CAMERA.distance, reach: CAMERA.distance, pivot: new Vector3(), ready: false }).current;
   const sendTimer = useRef(0);
   const motion = useRef({ velocity: new Vector3(), verticalSpeed: 0, grounded: false }).current;
   // Sitting: the seat I'm on (or null), how far into getting there, and where I started from.
@@ -165,12 +168,18 @@ export default function LocalPlayer({ avatarId }) {
         couple.photo.yaw -= event.movementX * 0.003;
         couple.photo.pitch = MathUtils.clamp(couple.photo.pitch + event.movementY * 0.003, PHOTO_PITCH[0], PHOTO_PITCH[1]);
       } else {
-        cameraYaw.current -= event.movementX * 0.0025;
+        // Left-right turns the camera round you; up-down tilts it (mouse down looks down, as in most games).
+        cameraYaw.current -= event.movementX * CAMERA.sensitivity;
+        view.pitch = MathUtils.clamp(view.pitch + event.movementY * CAMERA.sensitivity * 0.8, CAMERA.pitchMin, CAMERA.pitchMax);
       }
     };
     const onWheel = (event) => {
-      if (!couple.photo.on) return;
-      couple.photo.distance = MathUtils.clamp(couple.photo.distance * Math.exp(event.deltaY * 0.001), PHOTO_DISTANCE[0], PHOTO_DISTANCE[1]);
+      if (couple.photo.on) {
+        couple.photo.distance = MathUtils.clamp(couple.photo.distance * Math.exp(event.deltaY * 0.001), PHOTO_DISTANCE[0], PHOTO_DISTANCE[1]);
+      } else {
+        // Scroll to bring the camera closer or send it further back.
+        view.distance = MathUtils.clamp(view.distance * Math.exp(event.deltaY * 0.001), CAMERA.minDistance, CAMERA.maxDistance);
+      }
     };
     el.addEventListener('click', requestLock);
     el.addEventListener('wheel', onWheel, { passive: true });
@@ -180,7 +189,7 @@ export default function LocalPlayer({ avatarId }) {
       el.removeEventListener('wheel', onWheel);
       document.removeEventListener('mousemove', onMouseMove);
     };
-  }, [gl]);
+  }, [gl, view]);
 
   useFrame((_, rawDt) => {
     const b = body.current;
@@ -384,10 +393,22 @@ export default function LocalPlayer({ avatarId }) {
       camGoal.set(P.focus.x + Math.sin(P.yaw) * flat * distance, P.focus.y + Math.sin(P.pitch) * distance, P.focus.z + Math.cos(P.yaw) * flat * distance);
       lookAt.copy(P.focus);
     } else {
-      // Third-person follow camera with frame-rate-independent smoothing.
-      const yaw = cameraYaw.current;
-      camGoal.set(x + Math.sin(yaw) * CAMERA.distance, y + CAMERA.height, z + Math.cos(yaw) * CAMERA.distance);
-      lookAt.set(x, y + CAMERA.lookHeight, z);
+      // Third-person orbit camera. The point it circles follows the player smoothly; the orbit itself follows the
+      // mouse closely; and a wall in the way pulls the camera in at once and lets it back out gently.
+      if (!view.ready) {
+        view.pivot.set(x, y, z);
+        view.yaw = cameraYaw.current;
+        view.ready = true;
+      }
+      view.pivot.x += (x - view.pivot.x) * (1 - Math.exp(-14 * dt));
+      view.pivot.y += (y - view.pivot.y) * (1 - Math.exp(-10 * dt));
+      view.pivot.z += (z - view.pivot.z) * (1 - Math.exp(-14 * dt));
+      view.yaw = dampAngle(view.yaw, cameraYaw.current, 28, dt);
+      view.pitchNow += (view.pitch - view.pitchNow) * (1 - Math.exp(-28 * dt));
+      view.distanceNow += (view.distance - view.distanceNow) * (1 - Math.exp(-10 * dt));
+      lookAt.set(view.pivot.x, view.pivot.y + CAMERA.lookHeight, view.pivot.z);
+      const flat = Math.cos(view.pitchNow);
+      toCamera.set(Math.sin(view.yaw) * flat, Math.sin(view.pitchNow), Math.cos(view.yaw) * flat);
     }
 
     // Development only: tests can place the camera anywhere ({ p: [x, y, z], t: [x, y, z] }).
@@ -396,21 +417,25 @@ export default function LocalPlayer({ avatarId }) {
       lookAt.fromArray(window.__cam.t);
       camera.position.copy(camGoal);
       camera.lookAt(lookAt);
+    } else if (photo) {
+      // Photo mode: pull in if a wall is in the way, then ease toward the orbit position.
+      toCamera.subVectors(camGoal, lookAt);
+      const distance = toCamera.length();
+      toCamera.divideScalar(distance);
+      const hit = world.castRay(new rapier.Ray(lookAt, toCamera), distance, true, rapier.QueryFilterFlags.ONLY_FIXED);
+      if (hit) camGoal.copy(lookAt).addScaledVector(toCamera, Math.max(hit.timeOfImpact - CAMERA.clearance, 0.5));
+      camera.position.lerp(camGoal, 1 - Math.exp(-10 * dt));
+      camera.lookAt(lookAt);
+    } else {
+      const wanted = view.distanceNow;
+      const hit = world.castRay(new rapier.Ray(lookAt, toCamera), wanted, true, rapier.QueryFilterFlags.ONLY_FIXED);
+      const room = hit ? Math.max(hit.timeOfImpact - CAMERA.clearance, 0.4) : wanted;
+      view.reach = room < view.reach ? room : view.reach + (room - view.reach) * (1 - Math.exp(-4 * dt));
+      camera.position.copy(lookAt).addScaledVector(toCamera, view.reach);
+      // Never below the floor under you, when tilted to look up.
+      camera.position.y = Math.max(camera.position.y, view.pivot.y - CAPSULE.center + 0.25);
+      camera.lookAt(lookAt);
     }
-
-    // Camera occlusion: cast from the look point toward the camera, and pull in if a wall is in the way.
-    toCamera.subVectors(camGoal, lookAt);
-    const distance = toCamera.length();
-    toCamera.divideScalar(distance);
-    const ray = new rapier.Ray(lookAt, toCamera);
-    const hit = world.castRay(ray, distance, true, rapier.QueryFilterFlags.ONLY_FIXED);
-    if (hit) {
-      const safe = Math.max(hit.timeOfImpact - CAMERA.clearance, 0.5);
-      camGoal.copy(lookAt).addScaledVector(toCamera, safe);
-    }
-
-    camera.position.lerp(camGoal, 1 - Math.exp(-(photo ? 10 : 8) * dt));
-    camera.lookAt(lookAt);
 
     // Throttled upload. `volatile` drops the packet rather than queueing a stale one.
     sendTimer.current += dt;

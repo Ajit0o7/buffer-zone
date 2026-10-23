@@ -14,6 +14,7 @@ import {
   Vector3,
 } from 'three';
 import { useGallery } from './GalleryBatch';
+import { NO_REFLECT } from '../world/layers';
 import { acquireTexture, releaseTexture } from './textureCache';
 import { curtainOverrides, partner, setCurtainOverride } from './curtainState';
 import { CURTAIN, PAINTING } from './dimensions';
@@ -285,7 +286,7 @@ export default function CurtainPhotoFrame({ photo, index }) {
 
   return (
     <group ref={group}>
-      <mesh ref={painting} geometry={paintingGeometry} material={material} position={[0, 0, PAINTING.z]} visible={false} />
+      <mesh ref={painting} geometry={paintingGeometry} material={material} position={[0, 0, PAINTING.z]} visible={false} layers={NO_REFLECT} />
       <mesh
         ref={hitbox}
         geometry={hitGeometry}

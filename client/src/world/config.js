@@ -85,9 +85,14 @@ export const CAMERA = {
   fov: 60,
   near: 0.1, // 0.1 / 250 keeps depth precision good enough to avoid z-fighting on distant columns
   far: 250,
-  distance: 5.5,
-  height: 2.4,
-  lookHeight: 1.5,
+  distance: 5.5, // how far behind; the mouse wheel moves it between minDistance and maxDistance
+  minDistance: 2.2,
+  maxDistance: 9,
+  lookHeight: 1.5, // the point the camera circles, above the capsule centre
+  pitch: 0.16, // how far above that point it starts (radians): just over the shoulder
+  pitchMin: -0.5, // looking up at the chandeliers
+  pitchMax: 1.2, // looking down from above
+  sensitivity: 0.0024, // radians per pixel of mouse movement
   clearance: 0.3, // keep the lens this far off the wall it hits
 };
 

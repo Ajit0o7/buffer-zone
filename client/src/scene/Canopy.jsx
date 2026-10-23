@@ -26,6 +26,7 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CHANDELIERS, COURTYARD } from '../world/canopy';
+import { keepOutOfReflections } from '../world/layers';
 
 // Above the courtyard: a glazed iron roof across its open top (so the sunset shows through glass, and the vault has
 // an apex), two gilded crystal chandeliers on long chains from its ridge, and warm festoons of fairy lights along the
@@ -282,6 +283,7 @@ export default function Canopy() {
       m.computeBoundingSphere();
     }
     for (const m of [iron, gilt, wax, crystalMesh, linkMesh]) m.receiveShadow = true;
+    for (const m of [wax, crystalMesh, linkMesh, flameMeshObj]) keepOutOfReflections(m); // too small to show in the floor
     return { glass, iron, gilt, wax, crystalMesh, linkMesh, flameMesh: flameMeshObj, bulbMesh, flames, materials };
   }, []);
 

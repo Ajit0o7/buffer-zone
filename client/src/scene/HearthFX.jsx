@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { AdditiveBlending, BufferAttribute, BufferGeometry, Points, PositionalAudio, ShaderMaterial } from 'three';
+import { keepOutOfReflections } from '../world/layers';
 import { PRACTICALS } from '../world/rooms';
 import { localMotion } from '../world/shared';
 import { createFireBuffer } from '../audio/fireSound';
@@ -55,6 +56,7 @@ export default function HearthFX() {
     });
     const points = new Points(geometry, material);
     points.frustumCulled = false;
+    keepOutOfReflections(points);
     const sim = { age: new Float32Array(POOL).fill(-1), life: new Float32Array(POOL), vx: new Float32Array(POOL), vy: new Float32Array(POOL), vz: new Float32Array(POOL), phase: new Float32Array(POOL) };
     return { geometry, material, points, sim };
   }, []);

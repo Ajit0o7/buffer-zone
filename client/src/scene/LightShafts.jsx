@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending, BufferAttribute, CylinderGeometry, DoubleSide, Mesh, Quaternion, ShaderMaterial, Vector3 } from 'three';
+import { keepOutOfReflections } from '../world/layers';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { SUN } from '../world/config';
 import { COURTYARD } from '../world/canopy';
@@ -96,6 +97,7 @@ export default function LightShafts() {
     const m = new Mesh(geometry, material);
     m.renderOrder = 20; // after the glass
     m.frustumCulled = false;
+    keepOutOfReflections(m); // a reflected beam would look wrong anyway
     return m;
   }, []);
 

@@ -35,28 +35,28 @@ import {
 } from './lounge/furniture';
 import { marbleTexture, rugTexture } from './lounge/textures';
 
-// The lounge in the covered west alcove at the end of the courtyard (free floor x -16.5..-11.0, z -2.6..1.7), in
-// world metres. The seating group sits under the lion relief on the west wall, facing the courtyard; the piano
-// stands in the north-east corner with its spine along the north side, so the alcove stays open from the east
-// along its southern two thirds.
+// The lounge in the covered west alcove at the end of the courtyard, in world metres. The seating group sits in
+// the middle band of the alcove (z -2.1..1.2) under the lion relief on the west wall: the sofa against the wall,
+// the armchairs facing each other across the coffee table. That leaves clear lanes along the north and south
+// sides, where the alcove opens into the two aisles (x -17..-13). The grand piano stands out in the courtyard on
+// its north edge, keyboard to the east, facing the fountain.
 
 const SOFA = { x: -15.99, z: -0.45, yaw: Math.PI / 2, width: 2.2, depth: 0.92 };
 const CHAIR = { width: 0.98, depth: 0.86 };
 const TURN = 0.12; // the armchairs face each other across the table, turned this far toward the sofa
-// Each armchair stands 0.8 m clear of the table's end: room for a player to walk in to the sofa, and to stand up.
 const CHAIRS = [
-  { id: 'north', x: -14.55, z: 1.19, yaw: Math.PI + TURN },
-  { id: 'south', x: -14.55, z: -2.09, yaw: -TURN },
+  { id: 'north', x: -14.3, z: 0.75, yaw: Math.PI + TURN },
+  { id: 'south', x: -14.3, z: -1.65, yaw: -TURN },
 ];
-const TABLE = { x: -14.42, z: -0.45 };
+const TABLE = { x: -14.3, z: -0.45 };
 const SIDE_TABLES = [
-  { id: 'lamp', x: -16.08, z: -2.05 },
-  { id: 'roses', x: -16.08, z: 1.15 },
+  { id: 'lamp', x: -16.0, z: -1.85 },
+  { id: 'roses', x: -16.0, z: 0.95 },
 ];
 // The piano's frame: keyboard front edge at the origin, the case running back toward -x (west), spine to the north.
-const PIANO_AT = { x: -11.8, z: 0.9, yaw: -Math.PI / 2 };
+const PIANO_AT = { x: -9.0, z: 1.2, yaw: -Math.PI / 2 }; // leaves a 1 m lane between its bench and the fountain
 const BENCH_AT = -0.62; // the bench's centre, in front of the keys (piano frame z)
-const RUG = { x: -14.8, z: -0.45, length: 4.1, width: 2.9, fringe: 0.08, y: 0.012 };
+const RUG = { x: -14.75, z: -0.45, length: 3.9, width: 2.7, fringe: 0.08, y: 0.012 };
 
 const SEAT_TOP = 0.45;
 const PELVIS_IN = -0.02; // the pelvis, along the way the seat faces from the piece's middle: a little back, against the tufting
@@ -86,13 +86,14 @@ const BENCH = toWorld(PIANO_AT, 0, 0, BENCH_AT); // the piano bench's floor cent
 export const LOUNGE_SEATS = [
   seat('sofa-a', 'on the sofa', SOFA, -0.45, SEAT_TOP, EXIT_AT.sofa),
   seat('sofa-b', 'on the sofa', SOFA, 0.45, SEAT_TOP, EXIT_AT.sofa),
-  ...CHAIRS.map((c) => seat(`armchair-${c.id}`, 'in the armchair', c, 0, SEAT_TOP, EXIT_AT.chair)),
+  // Armchairs: stand up beside the chair, on the courtyard side (east), not into the table in front.
+  ...CHAIRS.map((c) => ({ ...seat(`armchair-${c.id}`, 'in the armchair', c, 0, SEAT_TOP, EXIT_AT.chair), exit: { x: c.x + 0.9, y: 0, z: c.z } })),
   {
     id: 'piano',
     label: 'at the piano',
     point: round({ x: BENCH.x, y: BENCH_SIZE.seat, z: BENCH.z }),
     yaw: PIANO_AT.yaw,
-    exit: round({ x: BENCH.x - 0.02, y: 0, z: BENCH.z - 0.8 }),
+    exit: round({ x: BENCH.x, y: 0, z: BENCH.z - 0.85 }), // beside the bench, on the fountain side
   },
 ];
 

@@ -1,4 +1,5 @@
 import { FLIGHT, stepTop } from '../scene/GrandStair';
+import { LOUNGE_SEATS } from '../scene/Lounge';
 
 // Places to sit, in world metres: the grand stair's steps, and benches around the house. A seat names where the
 // avatar's pelvis goes (`point`, on the seat surface), the way it faces (`yaw`), and where it stands up to (`exit`,
@@ -35,11 +36,10 @@ const stairSeats = [6, 14, 24].flatMap((k) => {
 
 export const BENCH = { length: 1.9, depth: 0.55, height: 0.46, slab: 0.12 };
 
-// Benches: [x, floor y, z, facing yaw]. Two facing each other across the courtyard by the fountain, along its edges
-// (clear of the colonnades, whose hanging banners are solid), and two on the east bridge looking out over the nave.
+// Benches: [x, floor y, z, facing yaw]. One on the courtyard's south edge by the fountain, facing the piano (clear of
+// the colonnade, whose hanging banners are solid), and two on the east bridge looking out over the nave.
 export const BENCHES = [
-  { id: 'nave-south', x: -9.2, y: 0, z: -2.45, yaw: 0 },
-  { id: 'nave-north', x: -9.2, y: 0, z: 1.55, yaw: Math.PI },
+  { id: 'nave-south', x: -9.4, y: 0, z: -2.45, yaw: 0 },
   { id: 'bridge-south', x: 13.9, y: 4.99, z: -3.9, yaw: -Math.PI / 2 },
   { id: 'bridge-north', x: 13.9, y: 4.99, z: 3.9, yaw: -Math.PI / 2 },
 ];
@@ -47,7 +47,7 @@ const benchSeats = BENCHES.flatMap((b) =>
   pair(`bench-${b.id}`, 'on the bench', { x: b.x, y: b.y + BENCH.height, z: b.z }, b.yaw, { forward: 0.75, down: BENCH.height }),
 );
 
-export const SEATS = [...stairSeats, ...benchSeats];
+export const SEATS = [...stairSeats, ...benchSeats, ...LOUNGE_SEATS]; // the lounge's sofa, armchairs and piano bench
 
 const SIT_RADIUS = 1.7; // metres from the seat's point, along the floor
 const MAX_HEIGHT_GAP = 1.6; // not from another floor

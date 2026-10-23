@@ -10,6 +10,7 @@ import {
   LUT,
   SSAO,
   ToneMapping,
+  Vignette,
 } from '@react-three/postprocessing';
 import { LUTCubeLoader, ToneMappingMode } from 'postprocessing';
 import { usePerf } from '../state/perf';
@@ -98,6 +99,8 @@ function Post({ tier }) {
       <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
       <HueSaturation saturation={0.06} />
       <BrightnessContrast contrast={0.05} />
+      {/* A soft darkening toward the corners, like an old lens: draws the eye in. Merged into the same pass. */}
+      <Vignette offset={0.32} darkness={0.42} />
       {LUT_URL && <Grade />}
     </EffectComposer>
   );

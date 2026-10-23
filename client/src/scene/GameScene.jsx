@@ -12,6 +12,11 @@ import PhotoFrames from '../gallery/PhotoFrames';
 import SpatialAudio from '../audio/SpatialAudio';
 import FootShadows from './FootShadows';
 import DustMotes from './DustMotes';
+import Lounge from './Lounge';
+import Greenery from './Greenery';
+import Fountain from './Fountain';
+import OutOfReflections from './OutOfReflections';
+import { NO_REFLECT } from '../world/layers';
 import Reactions from './Reactions';
 import PhotoCapture from '../photo/PhotoCapture';
 import VisibilityBake from '../world/VisibilityBake';
@@ -26,11 +31,6 @@ function DevHooks() {
   }, [gl, scene, camera]);
   return null;
 }
-
-// New set pieces, picked up as soon as their files exist (each module's default export, mounted inside <Physics>).
-const SET_PIECES = Object.values(import.meta.glob(['./Lounge.jsx', './Greenery.jsx', './Fountain.jsx'], { eager: true }))
-  .map((m) => m.default)
-  .filter(Boolean);
 
 // The house is code-split: the lobby never downloads the 3D engine or the mansion.
 const Mansion = lazy(() => import('./Mansion'));
@@ -59,6 +59,7 @@ export default function GameScene() {
         dpr={[1.25, Math.min(2, Math.max(1.5, window.devicePixelRatio || 1))]}
         gl={GL}
         camera={{ fov: CAMERA.fov, near: CAMERA.near, far: CAMERA.far, position: [0, 3, 8] }}
+        onCreated={({ camera }) => camera.layers.enable(NO_REFLECT)} // the player sees what the floor's mirror skips
       >
         <color attach="background" args={['#0b0a09']} />
         <PerfGovernor />
@@ -67,14 +68,19 @@ export default function GameScene() {
         <Suspense fallback={null}>
           <Lighting hdri={HDRI_URL} />
           <FootShadows />
-          <DustMotes />
-          <Reactions />
+          <OutOfReflections>
+            <DustMotes />
+            <Reactions />
+          </OutOfReflections>
           <PhotoCapture />
           <Physics gravity={[0, -9.81, 0]}>
             <Mansion />
-            {SET_PIECES.map((Piece) => (
-              <Piece key={Piece.name} />
-            ))}
+            {/* The lounge in the west alcove, the courtyard fountain, and plants and flowers around the house */}
+            <Lounge />
+            <Fountain />
+            <OutOfReflections>
+              <Greenery />
+            </OutOfReflections>
             <LocalPlayer avatarId={localAvatar} />
             <RemotePlayer avatarId={remoteAvatar} />
             {/* Inside Physics: each frame snaps itself onto the nearest wall with a physics ray. */}
