@@ -13,7 +13,8 @@ palazzo at golden hour. Positions are in world metres; the courtyard's measureme
 | Marble floor | `scene/MarbleFloor.jsx` | 2 | Procedural veined marble; real reflections in high and cinematic, gloss only in medium and low |
 | Lounge | `scene/Lounge.jsx` | ~13 | Persian rug, velvet Chesterfield, armchairs, marble table with candles, grand piano; all seats |
 | Fountain | `scene/Fountain.jsx` | 4 | Marble basin with two tiers, rippling water, falling streams, spray and a trickle sound |
-| Greenery | `scene/Greenery.jsx` | ~12 | Ivy and wisteria from the balustrades, olive trees and figs in urns, roses and hydrangeas |
+| Greenery | `scene/Greenery.jsx` | 10–20 | Ivy and wisteria from the balustrades, olive trees and figs in urns, roses and hydrangeas; each leaf kind split into 8 areas so what's off screen is culled |
+| Contact shadows | `scene/GroundShadows.jsx` | 1 | Soft patches under furniture, the fountain, benches, pots, stands and lamps, so nothing hovers |
 | Hearth | `scene/HearthFX.jsx` | 1 | Rising embers and a synthesized crackling fire in the salon |
 | Gallery dressing | `gallery/GalleryBatch.jsx` | +2 | Moulded gilt frames, brass picture lights that glow as a curtain opens, engraved brass plaques |
 
