@@ -82,15 +82,15 @@ export default function Mansion() {
       {/* The way up to the Upper Sunset Balcony: the shell has no stair of its own. */}
       <GrandStair stoneMap={floorMap} />
       {/* Polished marble over the courtyard floor; the glass roof, chandeliers and fairy lights above it. */}
-      <MarbleFloor />
-      <Canopy />
-      <LightShafts />
-      <Petals />
+      <group name="marble-floor"><MarbleFloor /></group>
+      <group name="canopy"><Canopy /></group>
+      <group name="light-shafts"><LightShafts /></group>
+      <group name="petals"><Petals /></group>
       {/* Stone benches to sit on, in the nave and on the east bridge. */}
       <Benches stoneMap={floorMap} />
       {/* The rooms' hearth, lamps, candles and lanterns, and the pooled lights that make them glow. */}
       <Practicals stoneMap={floorMap} />
-      <HearthFX />
+      <group name="hearth-fx"><HearthFX /></group>
     </>
   );
 }

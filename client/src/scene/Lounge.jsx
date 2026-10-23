@@ -81,6 +81,16 @@ function seat(id, label, piece, lx, seatTop, exitAt) {
 
 const BENCH = toWorld(PIANO_AT, 0, 0, BENCH_AT); // the piano bench's floor centre, in world metres
 
+/** Where each piece stands on the floor, for the soft contact shadows under them (scene/GroundShadows.jsx). */
+export const LOUNGE_FOOTPRINTS = [
+  { x: SOFA.x, z: SOFA.z, w: SOFA.width + 0.35, d: SOFA.depth + 0.3, yaw: SOFA.yaw },
+  ...CHAIRS.map((c) => ({ x: c.x, z: c.z, w: CHAIR.width + 0.3, d: CHAIR.depth + 0.3, yaw: c.yaw })),
+  { x: TABLE.x, z: TABLE.z, w: 0.8, d: 1.1, yaw: 0, k: 0.7 },
+  ...SIDE_TABLES.map((t) => ({ x: t.x, z: t.z, w: 0.62, d: 0.62, yaw: 0, k: 0.7 })),
+  { ...toWorld(PIANO_AT, 0.05, 0, 1.25), w: 1.75, d: 2.8, yaw: PIANO_AT.yaw, k: 0.8 },
+  { x: BENCH.x, z: BENCH.z, w: 0.95, d: 0.55, yaw: PIANO_AT.yaw, k: 0.6 },
+];
+
 /**
  * Where to sit in the lounge, in the same form as world/seats.js: two places on the sofa, 0.9 m apart, one in each
  * armchair, and the piano bench. The bench's standing spot is beside it (south), since the keyboard is in front.

@@ -77,6 +77,27 @@ export class InstanceList {
     this.count++;
   }
 
+  /**
+   * Splits the list by area of the house: north or south of the courtyard's centre line, and four bands along it. Each
+   * part becomes its own mesh with its own bounds, so the parts off screen or behind the camera aren't drawn at all.
+   */
+  splitByArea() {
+    const parts = new Map();
+    for (let i = 0; i < this.count; i++) {
+      const x = this.matrices[i * 16 + 12];
+      const z = this.matrices[i * 16 + 14];
+      const key = `${z > -0.45 ? 'n' : 's'}${Math.max(0, Math.min(3, Math.floor((x + 17) / 8.5)))}`;
+      let part = parts.get(key);
+      if (!part) parts.set(key, (part = new InstanceList()));
+      for (let k = 0; k < 16; k++) part.matrices.push(this.matrices[i * 16 + k]);
+      part.colors.push(this.colors[i * 3], this.colors[i * 3 + 1], this.colors[i * 3 + 2]);
+      part.sway.push(this.sway[i * 2], this.sway[i * 2 + 1]);
+      part.cells.push(this.cells[i]);
+      part.count++;
+    }
+    return parts;
+  }
+
   /** Writes the instances into a mesh made with this count, and the per-instance attributes into its geometry. */
   apply(mesh, withCells = false) {
     mesh.instanceMatrix.array.set(this.matrices);

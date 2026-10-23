@@ -16,6 +16,7 @@ import Lounge from './Lounge';
 import Greenery from './Greenery';
 import Fountain from './Fountain';
 import OutOfReflections from './OutOfReflections';
+import GroundShadows from './GroundShadows';
 import { NO_REFLECT } from '../world/layers';
 import Reactions from './Reactions';
 import PhotoCapture from '../photo/PhotoCapture';
@@ -76,15 +77,16 @@ export default function GameScene() {
           <Physics gravity={[0, -9.81, 0]}>
             <Mansion />
             {/* The lounge in the west alcove, the courtyard fountain, and plants and flowers around the house */}
-            <Lounge />
-            <Fountain />
-            <OutOfReflections>
+            <group name="lounge"><Lounge /></group>
+            <group name="fountain"><Fountain /></group>
+            <OutOfReflections name="greenery">
               <Greenery />
             </OutOfReflections>
+            <GroundShadows />
             <LocalPlayer avatarId={localAvatar} />
             <RemotePlayer avatarId={remoteAvatar} />
             {/* Inside Physics: each frame snaps itself onto the nearest wall with a physics ray. */}
-            <PhotoFrames />
+            <group name="gallery"><PhotoFrames /></group>
             {/* Zone culling: bakes which rooms see each painting and light, with physics rays. */}
             <VisibilityBake />
           </Physics>

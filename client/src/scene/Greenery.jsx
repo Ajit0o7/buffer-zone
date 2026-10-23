@@ -30,7 +30,7 @@ const CURTAINS = {
 const DRAPES = [[-7.4, 2.12, -1], [1.45, 2.12, -1], [-3.0, -2.98, 1], [5.9, -2.98, 1]];
 
 // Potted trees in the aisles, tucked behind ground-floor columns (the aisle stays 2.8 m wide beside them).
-const TREES = [
+export const TREES = [
   { kind: 'olive', pot: 'terracotta', x: -7.0, z: 3.57, height: 2.55 },
   { kind: 'fig', pot: 'urn', x: -3.1, z: 3.57, height: 1.25 },
   { kind: 'olive', pot: 'urn', x: 1.1, z: 3.57, height: 2.4 },
@@ -42,7 +42,7 @@ const TREES = [
 ];
 
 // Flowers on pedestals against the aisle walls, between the paintings (each over 1 m clear of a curtain).
-const STANDS = [
+export const STANDS = [
   { kind: 'hydrangeas', x: -3.25, z: 6.55 },
   { kind: 'roses', x: 5.9, z: 6.55 },
   { kind: 'roses', x: -2.4, z: -7.4 },
@@ -91,20 +91,28 @@ function build(stoneMap) {
 
   const textures = [ivyTexture(), lanceTexture(), figTexture(), racemeTexture(), blossomTexture()];
   const [ivyMap, lanceMap, figMap, racemeMap, bloomMap] = textures;
+  // One instanced mesh per kind of leaf or flower per area of the house (InstanceList.splitByArea), so what's off
+  // screen is culled. Each part needs its own copy of the geometry: the per-instance attributes live on it.
   const instanced = (name, list, geometry, material, cells = false) => {
-    const mesh = new InstancedMesh(geometry, material, list.count);
-    list.apply(mesh, cells);
-    mesh.name = name;
-    mesh.receiveShadow = true;
-    mesh.matrixAutoUpdate = false;
-    return mesh;
+    const parts = [];
+    for (const [key, part] of list.splitByArea()) {
+      const mesh = new InstancedMesh(geometry.clone(), material, part.count);
+      part.apply(mesh, cells);
+      mesh.name = `${name}-${key}`;
+      mesh.receiveShadow = true;
+      mesh.matrixAutoUpdate = false;
+      parts.push(mesh);
+    }
+    geometry.dispose();
+    return parts;
   };
+  // Leaves are flat or folded once: at their size, more segments cost triangles nobody can see.
   const meshes = [
-    instanced('ivy', ctx.ivy, leafGeometry({ fold: 0.15 }), foliageMaterial(ivyMap, { roughness: 0.6 })),
-    instanced('lance', ctx.lance, leafGeometry({ fold: 0.2, segX: 2, segY: 1 }), foliageMaterial(lanceMap, { roughness: 0.8 })),
-    instanced('fig', ctx.fig, leafGeometry({ fold: 0.1, curl: 0.16, segY: 4 }), foliageMaterial(figMap, { roughness: 0.5, glow: 0.08 })),
-    instanced('wisteria', ctx.raceme, crossGeometry(), foliageMaterial(racemeMap, { roughness: 0.8, glow: 0.18 })),
-    instanced('blossom', ctx.bloom, leafGeometry({ fold: 0.25, segX: 2, segY: 1 }), foliageMaterial(bloomMap, { roughness: 0.7, cells: 2, glow: 0.15 }), true),
+    ...instanced('ivy', ctx.ivy, leafGeometry({ fold: 0.15, segX: 2, segY: 1 }), foliageMaterial(ivyMap, { roughness: 0.6 })),
+    ...instanced('lance', ctx.lance, leafGeometry({ fold: 0, segX: 1, segY: 1 }), foliageMaterial(lanceMap, { roughness: 0.8 })),
+    ...instanced('fig', ctx.fig, leafGeometry({ fold: 0.1, curl: 0.16, segY: 3 }), foliageMaterial(figMap, { roughness: 0.5, glow: 0.08 })),
+    ...instanced('wisteria', ctx.raceme, crossGeometry(), foliageMaterial(racemeMap, { roughness: 0.8, glow: 0.18 })),
+    ...instanced('blossom', ctx.bloom, leafGeometry({ fold: 0.25, segX: 2, segY: 1 }), foliageMaterial(bloomMap, { roughness: 0.7, cells: 2, glow: 0.15 }), true),
   ];
   const solid = new Mesh(mergeParts(ctx.solid), new MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 }));
   solid.name = 'greenery-solid';
@@ -142,8 +150,8 @@ function useHouseStone(stoneMap) {
  * - White roses and blue-and-white hydrangeas in vases on slender stone pedestals sit between the
  *   paintings in the aisles.
  *
- * Seven draw calls in all: one instanced mesh per kind of leaf or flower (ivy; narrow leaves; fig;
- * wisteria racemes; blossoms) and two merged meshes (vertex-coloured pots, bark and stems; stone urns
+ * One instanced mesh per kind of leaf or flower (ivy; narrow leaves; fig; wisteria racemes; blossoms) per area
+ * of the house, so only what's on screen is drawn (typically 10-20 draws), and two merged meshes (vertex-coloured pots, bark and stems; stone urns
  * and pedestals, in the house's own stone: `stoneMap` if passed, else the floor texture of the mansion
 model, looked up the same way Mansion.jsx does). Pots and
  * pedestals are solid; hanging plants are not. Nothing casts shadows.
