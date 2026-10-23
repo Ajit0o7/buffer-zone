@@ -4,20 +4,21 @@ Target: **11.1 ms per frame** (90 Hz) on a mid-range GPU, with headroom for 120/
 below either removes work from that budget or makes the remaining work cheaper.
 
 > **Measured vs designed.** The development sandbox renders in software at about 1.4 fps, so frame times could
-> not be measured there. What *was* verified in a browser: the whole scene ran at 74–103 draw calls per frame
-> (including post passes) with three curtained paintings, photo textures cost zero VRAM until revealed and load on
-> reveal (3 photos ≈ 4.7 MB), curtain state syncs between two players, and nothing logs errors. Profile on real
-> hardware with the steps in [Measuring](#7-measuring) before treating 90 fps as met.
+> not be measured there. What *was* verified in a browser: with five rooms, the grand stair, 18 curtained paintings
+> and the practical lights, a frame draws 34–51 calls with one player in view and about 65–70 with both avatars on
+> screen (including the shadow pass and post-processing), and about 250 k triangles. Photo textures cost zero VRAM until revealed, the zone bake completes, and nothing logs errors.
+> Profile on real hardware with the steps in [Measuring](#7-measuring) before treating 90 fps as met.
 
 ## 1. Budget
 
 | Item | Budget | Where it's enforced |
 |---|---|---|
-| Frame time | ≤ 11.1 ms (90 Hz) | `scene/PerfGovernor.jsx` adapts DPR and post tier |
-| Draw calls | ≤ 150 | house (≈25 primitives) + avatars + 4 gallery batches + 1 per *revealed* painting + post passes |
-| Shadow pass | avatars only (~100 k tris) | house has `castShadow = false` |
+| Frame time | ≤ 11.1 ms (90 Hz) | `scene/PerfGovernor.jsx` scales DPR and post tier down below 85 fps |
+| Draw calls | ≤ 150 (measured 34–70) | house (≈25 primitives) + avatars + 2 gallery batches + 1 stair + 2 props + 1 per *revealed* painting + post |
+| Lights | 1 shadow-casting + 2 spots + 3 points, fixed | the counts never change, so no shader recompiles mid-walk |
+| Shadow pass | avatars only (~100 k tris) | house, stair and props have `castShadow = false` |
 | Full-screen passes | 1 (low/high tier), 4–5 (cinematic) | `scene/Lighting.jsx` |
-| Photo VRAM | ≤ 128 MB idle + what's on screen | `gallery/textureCache.js` (LRU) |
+| Photo VRAM | ≤ 6 textures resident once idle, ≤ 128 MB | `gallery/textureCache.js` (LRU) |
 | Pixel ratio | 1.0–1.5 | Canvas `dpr={[1, 1.5]}` + governor |
 
 ## 2. Lighting and shadows
@@ -32,7 +33,12 @@ below either removes work from that budget or makes the remaining work cheaper.
   resizing a shadow map at runtime forces a reallocation.
 - **A fixed pool of spotlights for paintings** (`GALLERY.spotlights = 2`, in `gallery/PhotoFrames.jsx`). Each
   light adds cost to every lit fragment, and adding or removing a light recompiles every lit shader, which is a
-  visible hitch. The pool keeps the light count constant and moves the lights to the most-open nearby paintings.
+  visible hitch. The pool keeps the light count constant and moves the lights to the most-open nearby paintings
+  that can be seen from the viewer's rooms.
+- **A fixed pool of three point lights for the rooms' lamps, candles and hearth** (`scene/Practicals.jsx`). Each
+  reaches 10 m and casts no shadow. They go to the nearest practicals that can be seen from the viewer's rooms and
+  fade as they change hands; practicals in other rooms stay dark (their props still glow, through bloom). See
+  [ROOMS.md](ROOMS.md#practical-lights-scenepracticalsjsx).
 - **Static lightmap hook.** Set `LIGHTMAP_URL` in `world/config.js` and `Mansion.jsx` applies it to every mesh
   with a second UV set (`uv1` / glTF `TEXCOORD_1`), with `texture.channel = 1`.
 
@@ -69,9 +75,9 @@ the merged pass, so a full film look costs almost nothing. Without a LUT, a ligh
 grade stands in.
 
 **The governor** (`scene/PerfGovernor.jsx`) uses drei's `PerformanceMonitor`: it averages frame times and moves a
-factor between 0 and 1. The pixel ratio follows the factor continuously (1.0–1.5); below 0.35 the low tier takes
-over; after four flip-flops it settles on the safe setting for the session. The target is
-`min(display refresh, 90)`.
+factor between 0 and 1, down while the frame rate is below 85 fps and up again above 88 (on a 90 Hz or faster
+display; scaled for slower ones). The pixel ratio follows the factor continuously (1.0–1.5); below 0.35 the low
+tier takes over; after four flip-flops it settles on the safe setting for the session.
 
 ## 4. GPU texture compression (KTX2 / Basis Universal)
 
@@ -128,9 +134,14 @@ ktx2 = new KTX2Loader()
 - **Frustum culling:** three.js tests every mesh's bounding sphere against the camera each frame. The gallery's
   instanced meshes call `computeBoundingSphere()` whenever a frame is placed, so the batch is culled correctly
   as a whole.
-- **Distance culling:** a revealed painting stops drawing beyond 80 m (`DRAW_DISTANCE`), and its texture goes back
-  to the cache beyond 30 m (`GALLERY.releaseRadius`).
-- **Lights:** the spotlight pool means paintings far from the player light nothing.
+- **Zone culling:** which rooms can see each painting and practical light is baked at load with physics rays
+  (`world/VisibilityBake.jsx`, 2 ms per frame until done). From any other room, a painting's batched parts are
+  collapsed (no vertex work), its photo isn't drawn, it gets no spotlight and it can't be clicked; a light gets no
+  pool light and its props are hidden. Sponza is one open courtyard, so this culls modestly here; see
+  [ROOMS.md](ROOMS.md#zone-culling-worldvisibilityjs-worldvisibilitybakejsx).
+- **Distance culling:** paintings beyond 80 m (`DRAW_DISTANCE`) aren't drawn, those within 12 m always are, and a
+  closed painting hands its photo back to the cache beyond 10 m (`GALLERY.releaseRadius`).
+- **Lights:** the two pools mean paintings and lamps far from the player light nothing.
 - **Physics:** the house is one fixed trimesh, and static colliders cost nothing per frame. Rapier only tests
   pairs whose bounding boxes overlap in its broad phase, which here means the two capsules. Curtains have
   **no colliders**: clicks use invisible hitbox planes, and while the mouse is locked, only those hitboxes are
@@ -144,10 +155,13 @@ ktx2 = new KTX2Loader()
 
 ## 6. Draw calls and Canvas hygiene
 
-- **Instancing:** every frame border, velvet backer, brass rod and curtain half is drawn by four `InstancedMesh`es
-  (`gallery/GalleryBatch.jsx`), however many paintings there are. Curtains animate through a per-instance
-  `aOpen` attribute, so opening them costs no CPU geometry work. Only revealed paintings add a draw call (each
-  has a unique texture).
+- **Instancing:** every painting's mounting (gilt frame, velvet backer, brass rod, ball finials and iron brackets,
+  merged into one geometry) is one `InstancedMesh`, and every curtain half another (`gallery/GalleryBatch.jsx`):
+  two draw calls however many paintings there are. The mounting's four finishes live in a 4×1 colour atlas and a
+  4×1 roughness/metalness atlas, addressed by the parts' UVs, so one standard material covers them all. Curtains
+  animate through a per-instance `aOpen` attribute, so opening them costs no CPU geometry work. Only revealed
+  paintings add a draw call (each has a unique texture). The grand stair (one call) and the room props (two calls)
+  are instanced the same way.
 - **One shader program per material kind:** painting materials start with a 1×1 placeholder map, so loading the
   real photo is a uniform change, never a recompile. The curtain material sets `customProgramCacheKey`.
 - **Canvas** (`scene/GameScene.jsx`):
@@ -170,8 +184,10 @@ ktx2 = new KTX2Loader()
 
 1. Add `r3f-perf` in development (`<Perf position="top-left" />` inside the Canvas) for fps, CPU/GPU ms, calls and
    triangles.
-2. In the console (dev builds): `__three.gl.info` for calls, triangles, textures and programs;
-   `__gallery.stats()` for resident photo textures and their estimated MB.
+2. In the console (dev builds): `__three.gl.info` for calls, triangles, textures and programs (set
+   `__three.gl.info.autoReset = false` and call `reset()` once per frame to count every pass of one frame);
+   `__gallery.stats()` for resident photo textures and their estimated MB; `__zones.viewer.rooms` and
+   `__zones.report()` for the rooms you're in and what each painting and light can be seen from.
 3. Force tiers with `?quality=low|high|cinematic` to compare.
 4. For per-call detail, capture a frame with [Spector.js](https://spector.babylonjs.com/).
 5. On VR or high-refresh displays, check that frame time stays under budget with the browser's performance panel

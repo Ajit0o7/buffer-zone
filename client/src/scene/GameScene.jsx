@@ -3,13 +3,14 @@ import { Canvas, useThree } from '@react-three/fiber';
 import { Physics } from '@react-three/rapier';
 import { NoToneMapping } from 'three';
 import { useSession } from '../state/session';
-import { AVATAR_BY_ROLE, AVATAR_URLS, CAMERA, HDRI_URL, partnerRole } from '../world/config';
+import { AVATAR_BY_ROLE, CAMERA, HDRI_URL, partnerRole } from '../world/config';
 import Lighting from './Lighting';
 import PerfGovernor from './PerfGovernor';
 import LocalPlayer from '../avatar/LocalPlayer';
 import RemotePlayer from '../avatar/RemotePlayer';
 import PhotoFrames from '../gallery/PhotoFrames';
 import SpatialAudio from '../audio/SpatialAudio';
+import VisibilityBake from '../world/VisibilityBake';
 import Loading from './Loading';
 import './loaders'; // sets the local Draco decoder path before any model loads
 
@@ -39,8 +40,8 @@ const GL = {
 
 export default function GameScene() {
   const role = useSession((s) => s.role);
-  const localUrl = AVATAR_URLS[AVATAR_BY_ROLE[role]];
-  const remoteUrl = AVATAR_URLS[AVATAR_BY_ROLE[partnerRole(role)]];
+  const localAvatar = AVATAR_BY_ROLE[role];
+  const remoteAvatar = AVATAR_BY_ROLE[partnerRole(role)];
 
   return (
     <>
@@ -58,10 +59,12 @@ export default function GameScene() {
           <Lighting hdri={HDRI_URL} />
           <Physics gravity={[0, -9.81, 0]}>
             <Mansion />
-            <LocalPlayer url={localUrl} />
-            <RemotePlayer url={remoteUrl} />
+            <LocalPlayer avatarId={localAvatar} />
+            <RemotePlayer avatarId={remoteAvatar} />
             {/* Inside Physics: each frame snaps itself onto the nearest wall with a physics ray. */}
             <PhotoFrames />
+            {/* Zone culling: bakes which rooms see each painting and light, with physics rays. */}
+            <VisibilityBake />
           </Physics>
           <SpatialAudio />
         </Suspense>

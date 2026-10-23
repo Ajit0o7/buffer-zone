@@ -2,11 +2,14 @@ import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3 } from 'three';
 import Avatar from './Avatar';
-import { remote } from '../world/shared';
-import { INTERP_DELAY_MS } from '../world/config';
+import { localMotion, remote } from '../world/shared';
+import { CAPSULE, INTERP_DELAY_MS } from '../world/config';
 import { damp } from '../utils/math';
 
-export default function RemotePlayer({ url }) {
+// The partner looks back at the local player.
+const LOOK_AT_LOCAL = { position: localMotion.position, known: true };
+
+export default function RemotePlayer({ avatarId }) {
   const group = useRef();
   const motion = useRef({ speed: 0, yaw: 0 });
   const sampled = useMemo(() => ({ position: new Vector3(), yaw: 0, speed: 0, anim: 'idle' }), []);
@@ -27,7 +30,8 @@ export default function RemotePlayer({ url }) {
 
   return (
     <group ref={group}>
-      <Avatar url={url} motion={motion.current} />
+      {/* Synced positions are capsule centres; the model's feet go on the floor below. */}
+      <Avatar id={avatarId} motion={motion.current} lookAt={LOOK_AT_LOCAL} footOffset={-CAPSULE.center} />
     </group>
   );
 }

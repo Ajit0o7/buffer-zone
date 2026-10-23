@@ -19,6 +19,7 @@ import { curtainOverrides, partner, setCurtainOverride } from './curtainState';
 import { CURTAIN, PAINTING } from './dimensions';
 import { useSession } from '../state/session';
 import { localMotion } from '../world/shared';
+import { isVisible, registerTarget, unregisterTarget } from '../world/visibility';
 import { GALLERY, MANSION_SCALE } from '../world/config';
 import { damp } from '../utils/math';
 
@@ -39,6 +40,30 @@ const SNAP_REACH = 3.5; // and searches this far behind it
 const SNAP_GAP = 0.02; // gap left between the wall and the back of the frame
 const SNAP_ATTEMPTS = 30; // physics needs a step or two before its colliders can be queried
 const DRAW_DISTANCE = 80; // paintings beyond this aren't drawn at all
+const ALWAYS_DRAW = 12; // nearer than this, a painting is drawn whatever the zone bake says
+// Where visibility is tested from: the centre and corners of the curtain, a little out from the wall.
+const SIGHT_POINTS = [
+  [0, 0],
+  [-CURTAIN.width * 0.45, CURTAIN.rodY - 0.05],
+  [CURTAIN.width * 0.45, CURTAIN.rodY - 0.05],
+  [-CURTAIN.width * 0.45, CURTAIN.rodY - CURTAIN.height + 0.05],
+  [CURTAIN.width * 0.45, CURTAIN.rodY - CURTAIN.height + 0.05],
+];
+
+// A frame's centre hangs 2 m above its floor; a standing player's capsule centre is 0.9 m up.
+const CENTRE_ABOVE_PLAYER = 1.1;
+const FLOOR_PENALTY = 4; // metres of distance per metre of height beyond the first
+
+/**
+ * How far a player is from a painting, for its triggers: horizontal distance on the same floor, so the
+ * hanging height doesn't matter, growing fast with height difference, so a painting on the balcony
+ * doesn't open for someone walking underneath it (and one halfway up the stair counts as nearby).
+ */
+function reach(position, anchor) {
+  const across = Math.hypot(position.x - anchor.x, position.z - anchor.z);
+  const up = Math.abs(anchor.y - CENTRE_ABOVE_PLAYER - position.y);
+  return across + Math.max(0, up - 1) * FLOOR_PENALTY;
+}
 
 const IDENTITY_SCALE = new Vector3(1, 1, 1);
 const scratchMatrix = new Matrix4();
@@ -73,7 +98,10 @@ function fitCover(texture) {
  * - The photo texture is requested only on the first reveal, decoded off the main thread, and
  *   faded in once the curtain is a third open. Until then the velvet backer is the placeholder.
  * - When the curtain is closed and the player is beyond GALLERY.releaseRadius, the texture is
- *   handed back to the LRU cache, which disposes it if VRAM is needed elsewhere.
+ *   handed back to the LRU cache, which keeps at most GALLERY.maxResident photos loaded.
+ * - Zone culling: once the frame hangs on its wall, the rooms it can be seen from are baked
+ *   (world/visibility.js). From any other room its batched parts and photo aren't drawn and it
+ *   takes no spotlight.
  */
 export default function CurtainPhotoFrame({ photo, index }) {
   const gallery = useGallery();
@@ -111,10 +139,19 @@ export default function CurtainPhotoFrame({ photo, index }) {
     caption: false,
   }).current;
 
+  const sightId = `photo:${photo.id}`;
   const place = (position) => {
     gallery.place(index, scratchMatrix.compose(position, configured.quaternion, IDENTITY_SCALE));
     group.current.position.copy(position);
     group.current.quaternion.copy(configured.quaternion);
+  };
+
+  /** Queues the visibility bake for where the frame finally hangs. */
+  const registerSight = () => {
+    const { position, quaternion } = group.current;
+    const matrix = new Matrix4().compose(position, quaternion, IDENTITY_SCALE);
+    const points = SIGHT_POINTS.map(([x, y]) => new Vector3(x, y, 0.3).applyMatrix4(matrix));
+    registerTarget(sightId, points);
   };
 
   /** Casts from in front of the anchor toward the wall and hangs the frame on whatever it hits. */
@@ -165,6 +202,7 @@ export default function CurtainPhotoFrame({ photo, index }) {
       gallery.toggles[index] = null;
       if (st.tex === 'ready') releaseTexture(photo.src);
       st.loadToken += 1; // a fetch still in flight releases itself when it lands
+      unregisterTarget(sightId);
       material.dispose();
       const session = useSession.getState();
       if (session.activePhoto === photo.id) session.setActivePhoto(null);
@@ -181,12 +219,17 @@ export default function CurtainPhotoFrame({ photo, index }) {
       st.placed = true;
     }
     if (!st.snapped && ++st.snapTries >= 2) {
-      if (snapToWall() || st.snapTries > SNAP_ATTEMPTS) st.snapped = true;
+      if (snapToWall() || st.snapTries > SNAP_ATTEMPTS) {
+        st.snapped = true;
+        registerSight();
+      }
     }
 
-    // 2. Triggers. Horizontal distance only, so the frame's hanging height doesn't matter.
+    // 2. Triggers.
     const anchor = gallery.anchors[index].position;
-    const dist = Math.hypot(localMotion.position.x - anchor.x, localMotion.position.z - anchor.z);
+    const dist = reach(localMotion.position, anchor);
+    const visible = dist < ALWAYS_DRAW || (dist < DRAW_DISTANCE && isVisible(sightId));
+    gallery.setVisible(index, visible);
     if (!st.near && dist < GALLERY.proximityRadius) st.near = true;
     else if (st.near && dist > GALLERY.closeRadius) st.near = false;
 
@@ -195,9 +238,7 @@ export default function CurtainPhotoFrame({ photo, index }) {
     // either. Only on the way out: a curtain clicked (or synced) from afar stays held until then.
     const inReach = dist <= GALLERY.resetRadius;
     if (override !== undefined && st.inReach && !inReach) {
-      const partnerDist = partner.known
-        ? Math.hypot(partner.position.x - anchor.x, partner.position.z - anchor.z)
-        : Infinity;
+      const partnerDist = partner.known ? reach(partner.position, anchor) : Infinity;
       if (partnerDist > GALLERY.resetRadius) setCurtainOverride(photo.id, null);
     }
     st.inReach = inReach;
@@ -219,7 +260,7 @@ export default function CurtainPhotoFrame({ photo, index }) {
     if (Math.abs(st.fade - fadeGoal) < 0.002) st.fade = fadeGoal;
     material.opacity = st.fade;
     material.transparent = st.fade < 1; // fully faded-in paintings render in the opaque pass
-    painting.current.visible = st.fade > 0 && dist < DRAW_DISTANCE;
+    painting.current.visible = st.fade > 0 && visible;
 
     // 6. Caption: React only hears about it when it changes.
     const caption = st.near && st.wantOpen && st.tex === 'ready';
@@ -240,7 +281,7 @@ export default function CurtainPhotoFrame({ photo, index }) {
         material={hitMaterial}
         position={[0, CURTAIN.rodY - CURTAIN.height / 2, CURTAIN.z + 0.02]}
         onClick={(e) => {
-          if (document.pointerLockElement) return; // while looking around, the centre-screen click handles it
+          if (document.pointerLockElement || !gallery.visible[index]) return; // while looking around, the centre-screen click handles it
           e.stopPropagation();
           toggle();
         }}

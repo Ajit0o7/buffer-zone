@@ -99,8 +99,11 @@ function Post({ tier }) {
 }
 
 /**
- * Image-based lighting, the player-following sun, and tiered post-processing. The tier comes from
- * the performance governor (scene/PerfGovernor.jsx) or the ?quality= URL parameter.
+ * Image-based lighting, the player-following sun (the one shadow-casting light) and tiered
+ * post-processing. The rooms' own lamps, candles and hearth are lit by a fixed pool of three
+ * short-range point lights in Practicals.jsx, which the house renders with its furnishings.
+ * The post tier comes from the performance governor (scene/PerfGovernor.jsx) or the ?quality= URL
+ * parameter.
  */
 export default function Lighting({ hdri = null }) {
   const tier = usePerf((s) => s.tier);

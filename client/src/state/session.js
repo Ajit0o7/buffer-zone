@@ -28,6 +28,7 @@ export const useSession = create((set, get) => ({
   key: null, // host-only, in memory, shown until the partner joins
   peerConnected: false,
   activePhoto: null,
+  room: null, // id of the room the local player is in (world/rooms.js)
 
   setSession: (patch) => {
     set(patch);
@@ -35,12 +36,13 @@ export const useSession = create((set, get) => ({
   },
   setPeerConnected: (peerConnected) => set({ peerConnected }),
   setActivePhoto: (activePhoto) => set({ activePhoto }),
+  setRoom: (room) => set({ room }),
   clear: () => {
     try {
       sessionStorage.removeItem(STORAGE_KEY);
     } catch {
       // ignore
     }
-    set({ roomId: null, role: null, token: null, key: null, peerConnected: false });
+    set({ roomId: null, role: null, token: null, key: null, peerConnected: false, room: null });
   },
 }));

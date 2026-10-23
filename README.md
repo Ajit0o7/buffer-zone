@@ -1,10 +1,12 @@
 # Our House — a private two-player 3D mansion
 
-A web-native, real-time 3D home for two people. The host (the boy) creates a room and shares a key;
-the guest (the girl) enters it and both walk through a cathedral-scale palace, where family photos hang behind
-velvet curtains that part as you approach.
+A web-native, real-time 3D home for two people. The host creates a room and shares a key; the guest
+enters it, and the two of them (two young men, each with their own avatar) walk through a cathedral-scale
+palace of five rooms. Eighteen photos, grouped by theme, hang behind velvet curtains that part as you approach,
+and a grand staircase climbs to the Upper Sunset Balcony.
 
-Deep dives: [docs/PERFORMANCE.md](docs/PERFORMANCE.md) (90+ fps architecture, KTX2 pipeline) ·
+Deep dives: [docs/ROOMS.md](docs/ROOMS.md) (the five rooms, the grand stair, practical lights) ·
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md) (90+ fps architecture, zone culling, KTX2 pipeline) ·
 [docs/GALLERY.md](docs/GALLERY.md) (curtain mechanic, VRAM lifecycle, sync).
 
 ```
@@ -14,7 +16,7 @@ buffer-zone/
 │   ├── .env.example       VITE_SERVER_URL
 │   ├── vite.config.js     code-splitting for the 3D engine
 │   ├── public/            static, cacheable assets (served as-is)
-│   │   ├── models/        mansion.glb (Sponza interior), avatars/{boy,girl}.glb (Mixamo rigs)
+│   │   ├── models/        mansion.glb (Sponza interior), avatars/{boy1,boy2}.glb, animations/locomotion.glb
 │   │   ├── hdri/          venice_sunset_1k.hdr (image-based lighting)
 │   │   ├── photos/        your photos, referenced by gallery/photos.js (placeholders until you add yours)
 │   │   ├── audio/         footstep.wav, romantic-theme.wav (placeholders until you add yours)
@@ -26,16 +28,20 @@ buffer-zone/
 │       ├── ui/            ErrorBoundary.jsx: a failed asset shows a message, not a blank page
 │       ├── net/           socket.js: Socket.io client + event bridge
 │       ├── state/         session.js: zustand (UI state, reconnect token); perf.js: rendering tier
-│       ├── world/         config.js (tuning + asset URLs), shared.js (per-frame state), rooms.js (zones)
+│       ├── world/         config.js (tuning + asset URLs), shared.js (per-frame state), rooms.js (rooms, music,
+│       │                  practical lights), visibility.js + VisibilityBake.jsx (zone culling)
 │       ├── input/         useKeys.js
 │       ├── scene/         GameScene.jsx (Canvas), Lighting.jsx (IBL, follow-sun shadows, post tiers),
-│       │                  Mansion.jsx (lazy GLB + colliders), PerfGovernor.jsx (adaptive DPR and tier),
-│       │                  loaders.js (Draco + KTX2 workers), Loading.jsx (DOM progress overlay)
-│       ├── avatar/        Avatar.jsx (blend tree), LocalPlayer.jsx (character controller + camera + sync), RemotePlayer.jsx
+│       │                  Mansion.jsx (lazy GLB + colliders), GrandStair.jsx (stair to the balcony),
+│       │                  Practicals.jsx (hearth, lamps, pooled point lights), stone.js (instanced stone),
+│       │                  PerfGovernor.jsx (adaptive DPR and tier), loaders.js (Draco + KTX2 workers),
+│       │                  Loading.jsx (DOM progress overlay)
+│       ├── avatar/        Avatar.jsx (blend tree, head-look), retarget.js (clip retargeting),
+│       │                  LocalPlayer.jsx (character controller + camera + sync), RemotePlayer.jsx
 │       ├── gallery/       PhotoFrames.jsx, CurtainPhotoFrame.jsx, GalleryBatch.jsx (instanced), curtainMaterial.js,
 │       │                  textureCache.js (LRU VRAM), curtainState.js (sync), photos.js (your data)
 │       ├── audio/         SpatialAudio.jsx (room music + positional footsteps)
-│       ├── hud/           Hud.jsx (room key, photo caption overlay)
+│       ├── hud/           Hud.jsx (room key, room name, photo caption overlay)
 │       └── utils/         math.js (damped smoothing)
 ├── server/                Node 20+ · Socket.io 4
 │   └── src/
@@ -43,7 +49,7 @@ buffer-zone/
 │       ├── rooms.js       room registry: keys hashed, tokens for reconnect, cleanup
 │       └── validate.js    pure input checks: key normalisation, payload sanitising
 ├── server/test/           node:test unit tests (run: npm test)
-├── docs/                  PERFORMANCE.md, GALLERY.md
+├── docs/                  ROOMS.md, PERFORMANCE.md, GALLERY.md
 └── scripts/               copy-decoders.mjs, fetch-assets.mjs, make-standins.mjs
 ```
 
@@ -99,8 +105,9 @@ the interpolation delay (`INTERP_DELAY_MS = 110` in `world/config.js`).
 ### 1.4 Motion and animation
 
 - **Local player:** a kinematic capsule (1.8 m, radius 0.35 m) moved by Rapier's character controller. It
-  shape-casts, so it can't tunnel through walls at sprint speed; it climbs steps up to 0.4 m, snaps to the
-  ground going down, and treats slopes over 50° as walls. Walk 3.5 m/s, sprint 8 m/s, with eased acceleration
+  shape-casts, so it can't tunnel through walls at sprint speed; it steps up kerbs to 0.3 m (where there's
+  25 cm to stand on, so urns and balustrade bases stay obstacles), snaps to the ground going down, climbs the
+  grand stair's 32° ramp, and treats slopes over 50° as walls. Walk 3.5 m/s, sprint 8 m/s, with eased acceleration
   (λ = 10) and a slightly faster stop (λ = 14). The house is scaled 1.5× (`MANSION_SCALE`) to cathedral size.
 - **Blend tree:** a 1-D tree on ground speed, idle → walk (3.5 m/s) → run (8 m/s), with linear cross-weights
   that sum to 1. Weights are damped every frame (`λ = 8`), so transitions never pop. Each clip plays at
@@ -111,13 +118,23 @@ the interpolation delay (`INTERP_DELAY_MS = 110` in `world/config.js`).
 - **Camera:** a third-person follow camera, 5.5 m back and 2.4 m up, FOV 60°, near 0.1 / far 250. A Rapier ray from the
   look point to the camera pulls the camera in when a wall is in the way, so the view never clips through the house.
 - **Phase lock:** while walk and run blend, the run clip is set to walk's point in its cycle, so the legs don't ghost.
+- **Avatars:** the host is `boy1` (Mixamo's "Soldier" character), the guest is `boy2` (a Ready Player Me avatar),
+  chosen by role in `AVATAR_BY_ROLE`. Both play one shared motion-capture set (Mixamo idle, walk and run, from the
+  Xbot file), retargeted onto each rig when it loads (`avatar/retarget.js`). The retarget poses the source skeleton
+  in world space and carries each bone's rotation from its own rest pose onto the target bone's rest pose, so it
+  copes with different armature rotations and units, T-pose versus A-pose rests, and rigs that face -Z instead of +Z.
+  Hips translation is rescaled by the ratio of hip heights, so a shorter or taller body keeps its feet on the floor.
+- **Head-look:** when the partner is within 4.5 m and roughly in front, each avatar eases its neck (40 %) and head
+  (60 %) toward the partner's eyes, up to 70° sideways and 25° up or down, layered on top of the animation.
 
 ### 1.5 Rendering pipeline
 
 ```
-Environment (IBL)               ─┐
-Follow-sun (avatar shadows only) ─┼─► Scene ─► [SSAO*] ─► Bloom ─► [DoF*] ─► ToneMapping ─► grade (LUT) ─► screen
-Spotlight pool (2, paintings)   ─┘                                   * cinematic tier only
+Environment (IBL)                  ─┐
+Follow-sun (avatar shadows only)    │
+Spotlight pool (2, paintings)       ├─► Scene ─► [SSAO*] ─► Bloom ─► [DoF*] ─► ToneMapping ─► grade (LUT) ─► screen
+Practical pool (3 point lights,    ─┘                                   * cinematic tier only
+  10 m reach, nearest visible lamps)
 ```
 
 The tier is chosen by `PerfGovernor` from the measured frame rate (target min(refresh, 90) fps), or forced with
@@ -128,7 +145,9 @@ The tier is chosen by `PerfGovernor` from the measured frame rate (target min(re
 - **Curtain gallery:** each photo hangs behind a velvet curtain that parts within 3.5 m, or on a click that is
   synced to the partner. Photos load only when first revealed and are released when far away. See
   [docs/GALLERY.md](docs/GALLERY.md).
-- **Room music:** each zone in `world/rooms.js` has a music weight, and the level crossfades over 6 m at zone edges.
+- **Rooms:** five rooms in `world/rooms.js` (Grand Atrium, Memory Corridor, Study & Library, Living Salon & Hearth,
+  Upper Sunset Balcony). Each has a music weight, crossfaded over 6 m at room edges, and its name fades in on the HUD
+  when you enter. See [docs/ROOMS.md](docs/ROOMS.md).
 - **Partner footsteps:** a `PositionalAudio` anchored to the partner. Cadence = speed ÷ 0.9 m per stride,
   so it speeds up on a run and stops when they stop. Falls off with distance (inverse model, 3 m reference, gentle rolloff for large halls).
 - **Autoplay:** the Create/Join click in the lobby calls `AudioContext.resume()`. Music starts as soon as it has loaded, and on
@@ -193,10 +212,11 @@ I could not check these live, so verify availability, licences and pricing befor
 - **Mixamo** (Adobe, free with an account): motion-captured clips for idle, walk, run. Export each as FBX, then
   convert to GLB in Blender.
 
-**Retargeting (required for Mixamo ↔ RPM)**
-- Mixamo rigs use `mixamorig:` bone names. RPM rigs use different names, so the clips will not bind directly.
-  Retarget in Blender with the **Rokoko** add-on or the **Auto-Rig Pro** retargeter, then export
-  one-animation GLBs against the avatar's skeleton. The clips must use the same bone names as the avatar.
+**Retargeting**
+- Mixamo and Ready Player Me rigs share bone names (Mixamo adds a `mixamorig` prefix), so `avatar/retarget.js`
+  retargets clips at load time. For a rig with different bone names, or for production-quality results (finger
+  poses, contact fixes), retarget in Blender with the **Rokoko** add-on or **Auto-Rig Pro** and export one-animation
+  GLBs against the avatar's own skeleton.
 
 **Optimisation and QA**
 - **glTF-Transform** (CLI): inspect, optimise, dedupe, compress.
@@ -224,13 +244,15 @@ Assets: download and build the house, avatars and lighting with:
 cd client && npm run assets
 ```
 
-This fetches Khronos **Sponza** (a stone palace interior, about 52 MB, packed to about 11 MB with Draco and WebP), two
-Mixamo characters with motion-capture idle, walk and run clips (Xbot and Michelle, from the three.js examples), and a Venice
-sunset HDRI. The house is also its own collider, so walls, columns and floors stop the player.
+This fetches Khronos **Sponza** (a stone palace interior, about 52 MB, packed to about 11 MB with Draco and WebP), the two
+avatars and their clips from the three.js examples (`boy1.glb`: Mixamo "Soldier"; `boy2.glb`: a Ready Player Me avatar;
+`animations/locomotion.glb`: Mixamo Xbot with motion-capture idle, walk and run), and a Venice sunset HDRI. If the avatar
+downloads fail, it writes simple box-rig stand-ins instead (`node scripts/make-standins.mjs --avatars`), so the scene still
+runs. The house is also its own collider, so walls, columns and floors stop the player.
 
-Licences: these files are third-party. Sponza is under the CRYENGINE Limited License Agreement, and the Mixamo characters are
-under Mixamo's terms. Both stay in your local `client/public/`, which the `.gitignore` excludes, and should not be published
-without checking those terms. The HDRI is from Poly Haven (CC0).
+Licences: these files are third-party. Sponza is under the CRYENGINE Limited License Agreement, the Mixamo characters and clips
+are under Mixamo's terms, and the Ready Player Me avatar under Ready Player Me's. They stay in your local `client/public/`, which
+the `.gitignore` excludes, and should not be published without checking those terms. The HDRI is from Poly Haven (CC0).
 
 The photos and music are still placeholders. Run `cd client && npm run standins` to regenerate them, and replace them with
 your own files, keeping the same paths. The frame positions in `gallery/photos.js` were found by a search for wall areas flat
@@ -239,16 +261,26 @@ change the house (see [docs/GALLERY.md](docs/GALLERY.md)).
 
 Tests: `cd server && npm test` runs the server unit tests (key handling, reconnect, relay, TTL cleanup, curtain sync).
 
-Development builds expose `__three`, `__gallery` and `__teleport(x, y, z, yaw)` on `window` for testing and profiling;
-production builds strip them.
+Development builds expose `__three`, `__gallery`, `__zones`, `__localMotion` and `__teleport(x, y, z, yaw)` on `window`
+for testing and profiling; production builds strip them.
 
-Verified so far: the server unit tests pass, the client builds, and `npm run assets` rebuilds the house end to end. In a
-browser, both players load into the Sponza house with the real avatars, and the guest's movement reaches the host's screen. Walking
-to the west gallery shows a photo frame with its caption. Software rendering here runs at about 1.4 fps, so motion looks choppy in
-this sandbox; it should run smoothly on a real GPU. Lighting, physics and the photo gallery are checked by screenshots, not by timing.
+**Verifying it yourself**
 
-Not realistic yet: the Mixamo characters are stylised mannequins, not photoreal people. For photoreal avatars, export a
-Ready Player Me file (or similar) at `avatars/boy.glb` and `avatars/girl.glb`, with its own rig and clips.
+1. `cd client && npm run assets`, then start the server and client as above. Create a room in one tab, join in another.
+2. Avatars: the host is the Soldier, the guest the Ready Player Me avatar. Walk toward each other: arms hang naturally, both face
+   the way they move, and within 4.5 m each turns to look at the other.
+3. Rooms: walk east up the grand stair from the spawn, across the landing through either arch, and down onto the bridge.
+   Room names fade in as you cross into each room. The hearth is on the north aisle's east half, the study lamps on its west half.
+4. Frame rate: open the browser's performance panel (or add `r3f-perf`), and check frame time stays under 11.1 ms. In the console,
+   `__three.gl.info.render` shows calls per frame, `__gallery.stats()` the resident photo textures (6 at most once idle), and
+   `__zones.viewer.rooms` the rooms you are in. See [docs/PERFORMANCE.md](docs/PERFORMANCE.md#7-measuring).
+
+Verified in this sandbox: the server unit tests pass, the client builds, production bundles contain no dev hooks, and both
+avatars and the stand-in fallback load without errors. Walking up the stair takes the player from the nave floor (capsule centre
+0.9 m) to the landing (7.17 m) and down onto the bridge (5.91 m). The visibility bake finishes for all 27 targets, and a frame
+draws 34–51 calls with one player in view, about 65–70 with both avatars on screen. With two players, a curtain
+opened by one opens for the other. Software rendering here runs at about 1.4 fps, so frame times can't be measured in this sandbox. The
+90 fps target is a design budget until you profile it on real hardware.
 
 Environment variables (see `client/.env.example`):
 - `client/.env.local`: `VITE_SERVER_URL=https://your-server.example.com`
@@ -258,12 +290,22 @@ Environment variables (see `client/.env.example`):
 
 ## 5. Roadmap
 
-Done in this pass: camera occlusion, snapshot interpolation, walk/run phase lock, the offline environment, the error boundary,
-the lobby's offline state, key normalisation, unit tests, and graceful shutdown.
+Done so far: camera occlusion, snapshot interpolation, walk/run phase lock, the offline environment, the error boundary,
+the lobby's offline state, key normalisation, unit tests, graceful shutdown, two retargeted avatars with head-look, five
+rooms with a grand stair, 18 themed paintings, zone culling and pooled practical lights.
 
-1. **Photoreal avatars** — replace the Mixamo mannequins with photoreal characters that have walk and run clips.
-   The house is a palace, so the photos and room zones may need tuning to your own layout.
-2. **Touch controls** — the starter is keyboard and mouse only. Add a virtual joystick for phones.
-3. **Per-room streaming** — split the house into zone GLBs and load neighbouring zones at their doors.
-4. **Hosting** — static client on a CDN with long cache lifetimes for `/models`, `/draco` and `/hdri` (content-hashed). Server on one small container with WebSocket support.
-5. **Privacy** — add server-side room expiry, and a rotated key if a room sits idle for a long time.
+Next, in order of value for the effort:
+
+1. **Spatial voice chat** — WebRTC audio between the two players, panned with `PositionalAudio` at the partner's head.
+   The biggest gain in presence; Socket.io can carry the signalling.
+2. **Photo uploads** — drag and drop in the browser, convert to WebP (or KTX2) client-side, store in object storage, and
+   add the frame to the next free wall spot (the flat-wall search in docs/GALLERY.md, run at runtime).
+3. **Foot IK on the stair** — feet sit within 9 cm of each tread on the ramp collider; a two-bone IK pass with a
+   downward ray per foot would plant them exactly.
+4. **Curtain foley** — a positional rustle when a curtain starts to move (one pooled `PositionalAudio`).
+5. **Sit interactions** — sensor colliders on benches and the hearth, E to sit, a kinematic snap and a sit clip.
+6. **Baked lighting** — bake the practical lights and the sun into a lightmap (`LIGHTMAP_URL`), then drop the pool.
+7. **Movement over WebRTC data channels** (for example Geckos.io), with client-side prediction. Worth it only once
+   players are far apart on the network: with two players and 110 ms of interpolation, WebSocket is already smooth.
+8. **Touch controls**, **per-room streaming** and **hosting** (static client on a CDN with long cache lifetimes for
+   `/models`, `/draco` and `/hdri`; server on one small container with WebSocket support).

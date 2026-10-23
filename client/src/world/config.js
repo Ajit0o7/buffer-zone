@@ -1,14 +1,27 @@
 // Central tuning constants. Keep asset URLs here so swapping a model never touches gameplay code.
 
-export const AVATAR_URLS = {
-  boy: '/models/avatars/boy.glb',
-  girl: '/models/avatars/girl.glb',
+/**
+ * Avatars. Each one names its model and the file its locomotion clips come from. Both boys use the
+ * same casual motion-capture set (Mixamo's Xbot idle/walk/run), retargeted onto each rig at load
+ * time. Mixamo and Ready Player Me rigs share bone names (Mixamo adds a "mixamorig" prefix), so the
+ * retarget maps by name and corrects for differing rest poses. See avatar/retarget.js.
+ */
+export const AVATARS = {
+  boy1: {
+    url: '/models/avatars/boy1.glb', // host: Mixamo "Soldier", via the three.js examples
+    clipSource: '/models/animations/locomotion.glb',
+  },
+  boy2: {
+    url: '/models/avatars/boy2.glb', // guest: Ready Player Me avatar, via the three.js examples
+    clipSource: '/models/animations/locomotion.glb',
+  },
 };
+// Clip names to look for in the clip source (first match wins, case-insensitive).
+export const CLIP_NAMES = { idle: ['idle'], walk: ['walk'], run: ['run'] };
 
-// Both avatars are Mixamo rigs with the same bone names, so one file's clips drive either model.
-// The boy file carries the motion-capture clips; CLIP_NAMES maps our states to the names inside it.
-export const CLIP_SOURCE_URL = '/models/avatars/boy.glb';
-export const CLIP_NAMES = { idle: 'idle', walk: 'walk', run: 'run' };
+// Heads turn toward the partner when they're this close, within this angle of straight ahead.
+export const HEAD_LOOK = { radius: 4.5, maxYaw: (70 * Math.PI) / 180, maxPitch: (25 * Math.PI) / 180, eyeHeight: 1.6 };
+
 // Ground speed each clip was captured at. Playback rate = actual speed / this, so feet don't slide.
 export const CLIP_REFERENCE_SPEED = { walk: 1.8, run: 5.0 };
 
@@ -23,9 +36,13 @@ export const LIGHTMAP_URL = null;
 // (Sponza becomes about 45 m long, 27 m wide and 17 m to the vault). Avatars stay human-sized.
 export const MANSION_SCALE = 1.5;
 
-// The host is always the boy, the guest is always the girl.
-export const AVATAR_BY_ROLE = { host: 'boy', guest: 'girl' };
+// The host's seat is boy1, the guest's is boy2.
+export const AVATAR_BY_ROLE = { host: 'boy1', guest: 'boy2' };
 export const partnerRole = (role) => (role === 'host' ? 'guest' : 'host');
+
+// Player capsule: 1.8 m tall overall, matching the avatars. The slightly wider radius keeps the player
+// from threading between column bases in the colonnades. Positions sent over the network are its centre.
+export const CAPSULE = { radius: 0.35, halfHeight: 0.55, center: 0.9 }; // center = halfHeight + radius
 
 // Locomotion, tuned for the larger halls.
 export const WALK_SPEED = 3.5; // m/s
@@ -55,7 +72,8 @@ export const GALLERY = {
   proximityRadius: 3.5, // curtain opens when the player is this close (metres)
   closeRadius: 4.5, // and closes again beyond this, so it doesn't flicker on the boundary
   resetRadius: 12, // a clicked open/closed override returns to automatic once both players are this far away
-  releaseRadius: 30, // a loaded photo is handed back to the texture cache beyond this distance
-  textureBudgetMB: 128, // idle (unreferenced) photo textures are kept up to this estimated GPU size
+  releaseRadius: 10, // a closed painting hands its photo back to the texture cache beyond this distance
+  textureBudgetMB: 128, // idle (unreferenced) photo textures are kept up to this estimated GPU size...
+  maxResident: 6, // ...and at most this many photo textures stay loaded at once (visible ones are never dropped)
   spotlights: 2, // fixed size of the spotlight pool, so light count (and shader variants) never change
 };

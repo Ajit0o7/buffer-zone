@@ -31,7 +31,7 @@ function SpotlightPool() {
     for (let i = 0; i < gallery.count; i++) {
       const open = gallery.open[i];
       const anchor = gallery.anchors[i];
-      if (open < 0.02 || !anchor.placed) continue;
+      if (open < 0.02 || !anchor.placed || !gallery.visible[i]) continue; // closed, or zone-culled
       const score = open / (1 + anchor.position.distanceTo(localMotion.position) * 0.1);
       for (let k = 0; k < picks.length; k++) {
         if (score > scores[k]) {
@@ -89,7 +89,7 @@ function CenterClick() {
     const onMouseDown = (event) => {
       if (event.button !== 0 || document.pointerLockElement !== gl.domElement) return;
       raycaster.setFromCamera(center, camera);
-      const hit = raycaster.intersectObjects(gallery.hitboxes.filter(Boolean), false)[0];
+      const hit = raycaster.intersectObjects(gallery.hitboxes.filter((h, i) => h && gallery.visible[i]), false)[0];
       if (!hit) return;
       gallery.toggles[gallery.hitboxes.indexOf(hit.object)]?.();
     };

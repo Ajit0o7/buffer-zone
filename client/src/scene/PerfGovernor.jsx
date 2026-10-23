@@ -22,8 +22,9 @@ export default function PerfGovernor() {
   return (
     <PerformanceMonitor
       bounds={(refreshRate) => {
+        // At 90 Hz: steps down below 85 fps, back up above 88. Scaled to slower displays.
         const target = Math.min(refreshRate, TARGET_FPS);
-        return [target * 0.85, target * 0.97];
+        return [target * (85 / 90), target * (88 / 90)];
       }}
       flipflops={4}
       onChange={({ factor }) => {

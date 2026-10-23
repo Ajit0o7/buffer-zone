@@ -1,18 +1,268 @@
-// Generates placeholder photos and audio so the gallery and sound work before your own files exist.
-// The house and avatars are real assets now (see the README). Replace these files with your own
-// photos and music; the code keeps the same paths. Node built-ins only, so `npm run standins` works anywhere.
+// Generates placeholder ("stand-in") assets, so the scene runs before real files exist:
+//   default      one gradient photo per painting in client/src/gallery/photos.js, plus two audio clips
+//   --avatars    also two box-built avatars (boy1, boy2) and a clip file, all on one rig (idle/walk/run),
+//                used by fetch-assets.mjs when the real avatars can't be downloaded
+// Node built-ins only, so `npm run standins` works anywhere. Replace the files with real ones later;
+// the code keeps the same paths.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), '..', 'client', 'public');
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const PUBLIC = join(ROOT, 'client', 'public');
+const { PHOTOS } = await import(pathToFileURL(join(ROOT, 'client', 'src', 'gallery', 'photos.js')).href);
+const WITH_AVATARS = process.argv.includes('--avatars');
+
 const out = (rel, data) => {
   const path = join(PUBLIC, rel);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, data);
   console.log(`wrote ${rel} (${data.length} bytes)`);
 };
+
+// ---------------------------------------------------------------- GLB writer
+
+const COMPONENTS = { SCALAR: 1, VEC3: 3, VEC4: 4 };
+const COMPONENT_TYPE = { Float32Array: 5126, Uint16Array: 5123 };
+
+/** Builds a binary glTF 2.0 file from a node tree, materials and animations. */
+function buildGLB({ roots, materials = [], animations = [] }) {
+  const chunks = [];
+  let byteLength = 0;
+  const bufferViews = [];
+  const accessors = [];
+
+  const addAccessor = (array, type, { normalized = false } = {}) => {
+    const pad = (4 - (byteLength % 4)) % 4;
+    if (pad) {
+      chunks.push(Buffer.alloc(pad));
+      byteLength += pad;
+    }
+    const bytes = Buffer.from(array.buffer, array.byteOffset, array.byteLength);
+    chunks.push(bytes);
+    bufferViews.push({ buffer: 0, byteOffset: byteLength, byteLength: bytes.length });
+    byteLength += bytes.length;
+
+    const n = COMPONENTS[type];
+    const count = array.length / n;
+    const accessor = { bufferView: bufferViews.length - 1, componentType: COMPONENT_TYPE[array.constructor.name], count, type };
+    if (normalized) accessor.normalized = true;
+    if (array instanceof Float32Array) {
+      accessor.min = [];
+      accessor.max = [];
+      for (let c = 0; c < n; c++) {
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (let i = c; i < array.length; i += n) {
+          lo = Math.min(lo, array[i]);
+          hi = Math.max(hi, array[i]);
+        }
+        accessor.min.push(lo);
+        accessor.max.push(hi);
+      }
+    }
+    accessors.push(accessor);
+    return accessors.length - 1;
+  };
+
+  // A box centred on the origin, with flat normals and per-face vertices.
+  const boxMeshes = new Map();
+  const addBoxMesh = (size, material) => {
+    const key = `${size}|${material}`;
+    if (boxMeshes.has(key)) return boxMeshes.get(key);
+    const [sx, sy, sz] = size;
+    const [hx, hy, hz] = [sx / 2, sy / 2, sz / 2];
+    const faces = [
+      { n: [1, 0, 0], v: [[hx, -hy, -hz], [hx, hy, -hz], [hx, hy, hz], [hx, -hy, hz]] },
+      { n: [-1, 0, 0], v: [[-hx, -hy, hz], [-hx, hy, hz], [-hx, hy, -hz], [-hx, -hy, -hz]] },
+      { n: [0, 1, 0], v: [[-hx, hy, -hz], [-hx, hy, hz], [hx, hy, hz], [hx, hy, -hz]] },
+      { n: [0, -1, 0], v: [[-hx, -hy, hz], [-hx, -hy, -hz], [hx, -hy, -hz], [hx, -hy, hz]] },
+      { n: [0, 0, 1], v: [[-hx, -hy, hz], [hx, -hy, hz], [hx, hy, hz], [-hx, hy, hz]] },
+      { n: [0, 0, -1], v: [[hx, -hy, -hz], [-hx, -hy, -hz], [-hx, hy, -hz], [hx, hy, -hz]] },
+    ];
+    const positions = new Float32Array(24 * 3);
+    const normals = new Float32Array(24 * 3);
+    const indices = new Uint16Array(36);
+    faces.forEach((face, f) => {
+      face.v.forEach((p, k) => {
+        const i = f * 4 + k;
+        positions.set(p, i * 3);
+        normals.set(face.n, i * 3);
+      });
+      indices.set([0, 1, 2, 0, 2, 3].map((x) => x + f * 4), f * 6);
+    });
+    const mesh = {
+      primitives: [{
+        attributes: { POSITION: addAccessor(positions, 'VEC3'), NORMAL: addAccessor(normals, 'VEC3') },
+        indices: addAccessor(indices, 'SCALAR'),
+        material,
+      }],
+    };
+    meshes.push(mesh);
+    boxMeshes.set(key, meshes.length - 1);
+    return meshes.length - 1;
+  };
+
+  const meshes = [];
+  const nodes = [];
+  const nodeByName = new Map();
+
+  const addNode = (spec) => {
+    const index = nodes.length;
+    const node = { name: spec.name };
+    nodes.push(node);
+    nodeByName.set(spec.name, index);
+    if (spec.translation) node.translation = spec.translation;
+    if (spec.rotation) node.rotation = spec.rotation;
+    if (spec.box) node.mesh = addBoxMesh(spec.box.size, spec.box.material);
+    if (spec.children?.length) node.children = spec.children.map(addNode);
+    return index;
+  };
+
+  const rootIndices = roots.map(addNode);
+
+  const animationJSON = animations.map((anim) => {
+    const samplers = [];
+    const channels = [];
+    for (const track of anim.tracks) {
+      const values = Float32Array.from(track.values.flat());
+      const type = track.path === 'translation' ? 'VEC3' : 'VEC4';
+      samplers.push({
+        input: addAccessor(Float32Array.from(track.times), 'SCALAR'),
+        output: addAccessor(values, type),
+        interpolation: 'LINEAR',
+      });
+      channels.push({ sampler: samplers.length - 1, target: { node: nodeByName.get(track.node), path: track.path } });
+    }
+    return { name: anim.name, samplers, channels };
+  });
+
+  const bin = Buffer.concat(chunks);
+  const binPadded = Buffer.concat([bin, Buffer.alloc((4 - (bin.length % 4)) % 4)]);
+
+  const json = {
+    asset: { version: '2.0', generator: 'buffer-zone stand-ins' },
+    scene: 0,
+    scenes: [{ nodes: rootIndices }],
+    nodes,
+    meshes,
+    materials: materials.map((m) => ({
+      pbrMetallicRoughness: { baseColorFactor: [...m.color, 1], metallicFactor: 0, roughnessFactor: m.rough },
+      doubleSided: true,
+    })),
+    accessors,
+    bufferViews,
+    buffers: [{ byteLength: binPadded.length }],
+    animations: animationJSON,
+  };
+
+  let jsonBytes = Buffer.from(JSON.stringify(json));
+  jsonBytes = Buffer.concat([jsonBytes, Buffer.alloc((4 - (jsonBytes.length % 4)) % 4, 0x20)]);
+
+  const header = Buffer.alloc(12);
+  header.write('glTF', 0);
+  header.writeUInt32LE(2, 4);
+  const total = 12 + 8 + jsonBytes.length + 8 + binPadded.length;
+  header.writeUInt32LE(total, 8);
+
+  const jsonHead = Buffer.alloc(8);
+  jsonHead.writeUInt32LE(jsonBytes.length, 0);
+  jsonHead.writeUInt32LE(0x4e4f534a, 4); // 'JSON'
+  const binHead = Buffer.alloc(8);
+  binHead.writeUInt32LE(binPadded.length, 0);
+  binHead.writeUInt32LE(0x004e4942, 4); // 'BIN\0'
+
+  return Buffer.concat([header, jsonHead, jsonBytes, binHead, binPadded]);
+}
+
+// ---------------------------------------------------------------- avatar rig
+
+const quatX = (angle) => [Math.sin(angle / 2), 0, 0, Math.cos(angle / 2)];
+
+/** Hips-rooted rig. Material indices: 0 shirt, 1 skin, 2 pants, 3 hair. */
+function avatarRig() {
+  const mat = { shirt: 0, skin: 1, pants: 2, hair: 3 };
+  return [{
+    name: 'Hips',
+    translation: [0, 0.9, 0],
+    children: [
+      { name: 'Torso', translation: [0, 0.3, 0], box: { size: [0.5, 0.6, 0.28], material: mat.shirt } },
+      {
+        name: 'Head',
+        translation: [0, 0.75, 0],
+        box: { size: [0.3, 0.3, 0.28], material: mat.skin },
+        children: [{ name: 'Hair', translation: [0, 0.17, -0.02], box: { size: [0.32, 0.07, 0.3], material: mat.hair } }],
+      },
+      {
+        name: 'ArmL',
+        translation: [-0.32, 0.55, 0],
+        children: [{ name: 'ArmLMesh', translation: [0, -0.28, 0], box: { size: [0.14, 0.56, 0.14], material: mat.skin } }],
+      },
+      {
+        name: 'ArmR',
+        translation: [0.32, 0.55, 0],
+        children: [{ name: 'ArmRMesh', translation: [0, -0.28, 0], box: { size: [0.14, 0.56, 0.14], material: mat.skin } }],
+      },
+      {
+        name: 'LegL',
+        translation: [-0.12, 0, 0],
+        children: [{ name: 'LegLMesh', translation: [0, -0.45, 0], box: { size: [0.18, 0.9, 0.2], material: mat.pants } }],
+      },
+      {
+        name: 'LegR',
+        translation: [0.12, 0, 0],
+        children: [{ name: 'LegRMesh', translation: [0, -0.45, 0], box: { size: [0.18, 0.9, 0.2], material: mat.pants } }],
+      },
+    ],
+  }];
+}
+
+/** Materials for one avatar, in the order avatarRig() expects. */
+const avatarMaterials = (shirt, hair) => [
+  { color: shirt, rough: 0.8 },
+  { color: [0.9, 0.75, 0.65], rough: 0.6 },
+  { color: [0.2, 0.2, 0.25], rough: 0.9 },
+  { color: hair, rough: 0.5 },
+];
+
+/** Walk-cycle-style clip: legs and arms swing in opposition, the hips bob twice per cycle. */
+function gaitClip({ name, duration, swing, bob, armSwing = swing * 0.8 }) {
+  const samples = 16;
+  const times = [];
+  const legL = [];
+  const legR = [];
+  const armL = [];
+  const armR = [];
+  const hips = [];
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples;
+    const phase = 2 * Math.PI * t;
+    times.push(t * duration);
+    const s = Math.sin(phase);
+    legL.push(quatX(swing * s));
+    legR.push(quatX(-swing * s));
+    armL.push(quatX(-armSwing * s));
+    armR.push(quatX(armSwing * s));
+    hips.push([0, 0.9 + bob * Math.abs(s), 0]);
+  }
+  return {
+    name,
+    tracks: [
+      { node: 'LegL', path: 'rotation', times, values: legL },
+      { node: 'LegR', path: 'rotation', times, values: legR },
+      { node: 'ArmL', path: 'rotation', times, values: armL },
+      { node: 'ArmR', path: 'rotation', times, values: armR },
+      { node: 'Hips', path: 'translation', times, values: hips },
+    ],
+  };
+}
+
+const CLIPS = [
+  gaitClip({ name: 'idle', duration: 2.4, swing: 0.02, bob: 0.008, armSwing: 0.04 }),
+  gaitClip({ name: 'walk', duration: 0.8, swing: 0.5, bob: 0.04 }),
+  gaitClip({ name: 'run', duration: 0.5, swing: 0.9, bob: 0.07 }),
+];
 
 // ---------------------------------------------------------------- PNG
 
@@ -73,11 +323,24 @@ function photoPixel(top, bottom, disc) {
   };
 }
 
-const PHOTOS = [
-  { file: 'first-trip.png', top: [120, 170, 220], bottom: [250, 200, 150], disc: { x: 0.72, y: 0.3, r: 0.1, color: [255, 240, 200] } },
-  { file: 'rainy-kitchen.png', top: [110, 120, 130], bottom: [190, 180, 170], disc: { x: 0.25, y: 0.35, r: 0.08, color: [255, 220, 150] } },
-  { file: 'the-yes.png', top: [240, 150, 170], bottom: [255, 220, 200], disc: { x: 0.5, y: 0.25, r: 0.12, color: [255, 250, 230] } },
-];
+// One placeholder per painting in photos.js, each with its own colours (derived from its id).
+function photoStyle(id) {
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const hue = (h % 360) / 360;
+  const rgb = (hh, s, l) => {
+    const f = (n) => {
+      const k = (n + hh * 12) % 12;
+      return 255 * (l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1)));
+    };
+    return [f(0), f(8), f(4)];
+  };
+  return {
+    top: rgb(hue, 0.45, 0.62),
+    bottom: rgb((hue + 0.08) % 1, 0.55, 0.82),
+    disc: { x: 0.2 + ((h >> 8) % 60) / 100, y: 0.22 + ((h >> 4) % 20) / 100, r: 0.08 + ((h >> 12) % 5) / 100, color: [255, 244, 222] },
+  };
+}
 
 // ---------------------------------------------------------------- WAV
 
@@ -136,8 +399,19 @@ function musicSamples() {
   return Array.from(out);
 }
 
+
 // ---------------------------------------------------------------- write
 
-for (const p of PHOTOS) out(`photos/${p.file}`, png(640, 480, photoPixel(p.top, p.bottom, p.disc)));
+for (const photo of PHOTOS) {
+  const style = photoStyle(photo.id);
+  out(photo.src.replace(/^\//, ''), png(640, 480, photoPixel(style.top, style.bottom, style.disc)));
+}
 out('audio/footstep.wav', wav(footstepSamples()));
 out('audio/romantic-theme.wav', wav(musicSamples()));
+
+if (WITH_AVATARS) {
+  // Same rig in all three files; config.js takes the clips from locomotion.glb.
+  out('models/avatars/boy1.glb', buildGLB({ roots: avatarRig(), materials: avatarMaterials([0.2, 0.35, 0.7], [0.18, 0.12, 0.08]), animations: CLIPS }));
+  out('models/avatars/boy2.glb', buildGLB({ roots: avatarRig(), materials: avatarMaterials([0.25, 0.5, 0.3], [0.45, 0.3, 0.15]), animations: CLIPS }));
+  out('models/animations/locomotion.glb', buildGLB({ roots: avatarRig(), materials: avatarMaterials([0.5, 0.5, 0.5], [0.3, 0.3, 0.3]), animations: CLIPS }));
+}

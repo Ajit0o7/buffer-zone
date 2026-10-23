@@ -12,13 +12,16 @@ import { GALLERY } from '../world/config';
  *
  * - acquire(src) loads on first use and returns the shared texture; release(src) hands it back.
  * - Textures that nobody references stay resident (so walking back to a painting is instant) until
- *   the estimated GPU size of all idle textures exceeds the budget; then the least recently used
- *   idle ones are disposed, freeing their VRAM.
+ *   either limit is passed: more than GALLERY.maxResident textures loaded, or idle ones estimated
+ *   above GALLERY.textureBudgetMB. Then the least recently used idle ones are disposed, freeing their
+ *   VRAM. Textures in use are never dropped, so the count can exceed the limit only while that many
+ *   paintings are actually open.
  * - Decoding never blocks the render loop: JPEG/PNG/WebP decode through createImageBitmap
  *   (ImageBitmapLoader), KTX2 transcodes in KTX2Loader's workers. The GPU upload happens once, in
  *   the load callback (gl.initTexture), instead of stalling the first frame that draws it.
  */
 const BUDGET_BYTES = GALLERY.textureBudgetMB * 1024 * 1024;
+const MAX_RESIDENT = GALLERY.maxResident;
 const entries = new Map(); // src -> { refs, texture, bytes, promise, lastUsed }
 
 let bitmapLoader = null;
@@ -61,17 +64,23 @@ function dispose(entry) {
 
 function evict() {
   let idleBytes = 0;
-  for (const e of entries.values()) if (e.refs === 0 && e.texture) idleBytes += e.bytes;
-  if (idleBytes <= BUDGET_BYTES) return;
+  let resident = 0;
+  for (const e of entries.values()) {
+    if (!e.texture) continue;
+    resident += 1;
+    if (e.refs === 0) idleBytes += e.bytes;
+  }
+  if (idleBytes <= BUDGET_BYTES && resident <= MAX_RESIDENT) return;
 
   const idle = [...entries.entries()]
     .filter(([, e]) => e.refs === 0 && e.texture)
     .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
   for (const [src, e] of idle) {
-    if (idleBytes <= BUDGET_BYTES) break;
+    if (idleBytes <= BUDGET_BYTES && resident <= MAX_RESIDENT) break;
     dispose(e);
     entries.delete(src);
     idleBytes -= e.bytes;
+    resident -= 1;
   }
 }
 

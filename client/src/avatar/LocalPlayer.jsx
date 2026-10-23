@@ -6,24 +6,20 @@ import Avatar from './Avatar';
 import { useKeys } from '../input/useKeys';
 import { socket } from '../net/socket';
 import { useSession } from '../state/session';
-import { ACCELERATION, CAMERA, DECELERATION, GRAVITY, RUN_SPEED, SEND_HZ, WALK_SPEED } from '../world/config';
+import { ACCELERATION, CAMERA, CAPSULE, DECELERATION, GRAVITY, RUN_SPEED, SEND_HZ, WALK_SPEED } from '../world/config';
+import { partner } from '../gallery/curtainState';
 import { localMotion } from '../world/shared';
 import { dampAngle } from '../utils/math';
 
 const UP = new Vector3(0, 1, 0);
 
-// Capsule: 1.8 m tall overall, matching the avatars. The slightly wider radius keeps the player
-// from threading between column bases in the colonnades.
-const CAPSULE_RADIUS = 0.35;
-const CAPSULE_HALF_HEIGHT = 0.55; // total height = 2 * (half height + radius) = 1.8 m
-const CAPSULE_CENTER = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS;
 
 // Rapier character controller. It moves the capsule by shape-casting, so it can't tunnel through
 // walls at sprint speed, and it handles steps, slopes and ground contact itself.
 const SKIN = 0.02; // gap kept from surfaces; avoids jitter against walls
-const STEP_HEIGHT = 0.4; // climbs plinths and stair treads up to this tall...
-const STEP_MIN_WIDTH = 0.2; // ...when there is at least this much floor on top
-const SNAP_TO_GROUND = 0.5; // stays glued to the floor going down steps and ramps
+const STEP_HEIGHT = 0.3; // climbs a step or kerb up to this tall (a stair riser is 18 cm)...
+const STEP_MIN_WIDTH = 0.25; // ...when there's room to stand on top, so balustrade bases and urns stay obstacles
+const SNAP_TO_GROUND = 0.5; // stays glued to the floor going down steps and the grand stair's ramp
 const MAX_SLOPE = (50 * Math.PI) / 180; // walkable incline
 const MIN_SLIDE = (35 * Math.PI) / 180; // steeper than this, the capsule slides back down
 const MAX_FALL_SPEED = 30;
@@ -43,7 +39,7 @@ const toCamera = new Vector3();
  * The local player: a kinematic capsule driven by Rapier's character controller, plus a
  * third-person camera that orbits with mouse look (pointer lock) and pulls in when a wall is in the way.
  */
-export default function LocalPlayer({ url }) {
+export default function LocalPlayer({ avatarId }) {
   const body = useRef();
   const collider = useRef();
   const controller = useRef();
@@ -52,9 +48,10 @@ export default function LocalPlayer({ url }) {
   const { world, rapier } = useRapier();
   const role = useSession((s) => s.role);
   // Start side by side across the nave (the open walkway runs along x), not stacked on one spot.
-  const spawn = useRef([0, CAPSULE_CENTER + 0.05, role === 'host' ? -1.5 : 1.5]).current;
-  // Start the camera looking down the nave, rather than into the arcades.
-  const cameraYaw = useRef(Math.PI / 2);
+  // West of the grand stair, so the follow camera starts clear of it.
+  const spawn = useRef([-3, CAPSULE.center + 0.05, role === 'host' ? -1.5 : 1.5]).current;
+  // Start behind the player, looking east up the nave toward the grand stair.
+  const cameraYaw = useRef(-Math.PI / 2);
   const sendTimer = useRef(0);
   const motion = useRef({ velocity: new Vector3(), verticalSpeed: 0, grounded: false }).current;
 
@@ -79,7 +76,11 @@ export default function LocalPlayer({ url }) {
       body.current?.setNextKinematicTranslation({ x, y, z });
       if (yaw !== undefined) cameraYaw.current = yaw;
     };
-    return () => delete window.__teleport;
+    window.__localMotion = localMotion;
+    return () => {
+      delete window.__teleport;
+      delete window.__localMotion;
+    };
   }, []);
 
   // Pointer-lock mouse look. Only active once the canvas has been clicked.
@@ -182,8 +183,8 @@ export default function LocalPlayer({ url }) {
 
   return (
     <RigidBody ref={body} position={spawn} type="kinematicPosition" colliders={false}>
-      <CapsuleCollider ref={collider} args={[CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS]} />
-      <Avatar url={url} motion={localMotion} footOffset={-CAPSULE_CENTER} />
+      <CapsuleCollider ref={collider} args={[CAPSULE.halfHeight, CAPSULE.radius]} />
+      <Avatar id={avatarId} motion={localMotion} lookAt={partner} footOffset={-CAPSULE.center} />
     </RigidBody>
   );
 }

@@ -170,6 +170,37 @@ button:disabled {
   margin-top: 0.25rem;
 }
 
+.caption .category {
+  display: block;
+  color: var(--accent);
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
+}
+
+/* Room name, shown for a few seconds on entering a room */
+.room-name {
+  position: absolute;
+  top: 16%;
+  left: 50%;
+  transform: translate(-50%, -6px);
+  margin: 0;
+  color: #f6ead6;
+  font-size: 1.35rem;
+  font-style: italic;
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+  opacity: 0;
+  transition: opacity 0.8s ease, transform 0.8s ease;
+  pointer-events: none;
+}
+
+.room-name.visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
 .hint {
   position: absolute;
   bottom: 16px;
