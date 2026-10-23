@@ -12,8 +12,8 @@ const MAX_DPR = Math.min(2, Math.max(1.5, window.devicePixelRatio || 1));
  *
  * drei's PerformanceMonitor averages frame times and moves a `factor` between 0 and 1: down when we
  * run below the lower bound, up when we're comfortably above the upper one. The pixel ratio follows
- * the factor continuously; below 0.35 the cheap post tier takes over, which drops bloom and the
- * colour grade. If it keeps flip-flopping, it settles on the safe setting for the session.
+ * the factor continuously; below 0.6 the marble floor stops mirroring the room (medium), and below 0.35 the
+ * cheap post tier takes over, which drops bloom and the colour grade. If it keeps flip-flopping, it settles on the safe setting for the session.
  * On a 60 Hz display the target becomes 60, since no display can show more than its refresh rate.
  */
 export default function PerfGovernor() {
@@ -30,7 +30,8 @@ export default function PerfGovernor() {
       flipflops={4}
       onChange={({ factor }) => {
         setDpr(MIN_DPR + (MAX_DPR - MIN_DPR) * factor);
-        setTier(factor < 0.35 ? 'low' : 'high');
+        // Resolution goes first, then the floor's mirror, and only then bloom and the rest.
+        setTier(factor < 0.35 ? 'low' : factor < 0.6 ? 'medium' : 'high');
       }}
       onFallback={() => {
         setDpr(MIN_DPR);

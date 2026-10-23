@@ -66,8 +66,9 @@ SSAO and depth of field, which each need extra passes (normals, depth, blur). So
 
 | Tier | Effects | Passes | Chosen when |
 |---|---|---|---|
-| `low` | tone mapping | 1 | governor factor < 0.35, or `?quality=low` |
-| `high` | bloom (mip-blur), hue/saturation, contrast, optional LUT, tone mapping | 1 + bloom's mip chain | default |
+| `low` | tone mapping; no mirror floor, sunbeams, petals or dust | 1 | governor factor < 0.35, or `?quality=low` |
+| `medium` | as high, but the marble floor reflects only the environment, not the room | 1 + bloom's mip chain | factor < 0.6, or `?quality=medium` |
+| `high` | bloom (mip-blur), hue/saturation, contrast, vignette, optional LUT, tone mapping; the mirror floor | 1 + bloom's mip chain, + the mirror's scene render | default |
 | `cinematic` | high + SSAO + depth of field | 4–5 | only with `?quality=cinematic` |
 
 The **colour grade** is a 3D LUT (`LUT_URL`, a `.cube` file loaded with `LUTCubeLoader`): one texture lookup in
@@ -76,8 +77,9 @@ grade stands in.
 
 **The governor** (`scene/PerfGovernor.jsx`) uses drei's `PerformanceMonitor`: it averages frame times and moves a
 factor between 0 and 1, down while the frame rate is below 85 fps and up again above 88 (on a 90 Hz or faster
-display; scaled for slower ones). The pixel ratio follows the factor continuously (1.0–1.5); below 0.35 the low
-tier takes over; after four flip-flops it settles on the safe setting for the session.
+display; scaled for slower ones). The pixel ratio follows the factor continuously (1.25 up to the screen's own
+density, 2 at most); below 0.6 the floor's mirror goes (it redraws the scene: the costliest single effect), below 0.35
+the low tier takes over; after four flip-flops it settles on the safe setting for the session.
 
 ## 4. GPU texture compression (KTX2 / Basis Universal)
 

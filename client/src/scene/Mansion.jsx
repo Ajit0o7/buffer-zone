@@ -10,6 +10,7 @@ import Benches from './Benches';
 import MarbleFloor from './MarbleFloor';
 import Canopy from './Canopy';
 import LightShafts from './LightShafts';
+import Petals from './Petals';
 import HearthFX from './HearthFX';
 import Practicals from './Practicals';
 
@@ -84,6 +85,7 @@ export default function Mansion() {
       <MarbleFloor />
       <Canopy />
       <LightShafts />
+      <Petals />
       {/* Stone benches to sit on, in the nave and on the east bridge. */}
       <Benches stoneMap={floorMap} />
       {/* The rooms' hearth, lamps, candles and lanterns, and the pooled lights that make them glow. */}

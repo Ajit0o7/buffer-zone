@@ -2,14 +2,18 @@
 
 A web-native, real-time 3D home for two people. The host creates a room and shares a key; the guest
 enters it, and the two of them, a young man and a young woman in Nepali dress, walk through a cathedral-scale
-palace of five rooms. Eighteen photos, grouped by theme, hang behind velvet curtains that part as you approach,
-and a grand staircase climbs to the Upper Sunset Balcony.
+palace of five rooms at golden hour: a glass-roofed courtyard with chandeliers, a marble floor, a fountain, a lounge
+and climbing wisteria. Eighteen photos, grouped by theme, hang behind velvet curtains that part as you approach, and
+a grand staircase climbs to the Upper Sunset Balcony. You can wave, blow a kiss, sit together, walk hand in hand and
+take a polaroid of the two of you.
 
 Deep dives: [docs/ROOMS.md](docs/ROOMS.md) (the five rooms, the grand stair, practical lights) ·
 [docs/PERFORMANCE.md](docs/PERFORMANCE.md) (90+ fps architecture, zone culling, KTX2 pipeline) ·
 [docs/GALLERY.md](docs/GALLERY.md) (curtain mechanic, VRAM lifecycle, sync) ·
 [docs/VOICE.md](docs/VOICE.md) (spatial voice chat) · [docs/AUDIO.md](docs/AUDIO.md) (footsteps, reverb) ·
-[docs/MEMORIES.md](docs/MEMORIES.md) (adding your own photos).
+[docs/MEMORIES.md](docs/MEMORIES.md) (adding your own photos) · [docs/COUPLE.md](docs/COUPLE.md) (emotes, sitting,
+walking together, photo mode, all the keys) · [docs/ATMOSPHERE.md](docs/ATMOSPHERE.md) (sky, chandeliers, floor,
+lounge, fountain, greenery).
 
 ```
 buffer-zone/
@@ -37,14 +41,18 @@ buffer-zone/
 │       │                  Mansion.jsx (lazy GLB + colliders), GrandStair.jsx (stair to the balcony),
 │       │                  Practicals.jsx (hearth, lamps, pooled point lights), stone.js (instanced stone),
 │       │                  PerfGovernor.jsx (adaptive DPR and tier), loaders.js (Draco + KTX2 workers),
-│       │                  Loading.jsx (DOM progress overlay)
+│       │                  Loading.jsx (DOM progress overlay), Sky, Canopy, MarbleFloor, LightShafts, Petals,
+│       │                  Lounge, Fountain, Greenery, HearthFX, Benches, Reactions (see docs/ATMOSPHERE.md)
 │       ├── avatar/        Avatar.jsx (blend tree, head-look), retarget.js (clip retargeting),
-│       │                  LocalPlayer.jsx (character controller + camera + sync), RemotePlayer.jsx
+│       │                  LocalPlayer.jsx (character controller + camera + sync), RemotePlayer.jsx,
+│       │                  emotes.js + couplePose.js + ik.js (emotes, sitting, holding hands)
 │       ├── gallery/       PhotoFrames.jsx, CurtainPhotoFrame.jsx, GalleryBatch.jsx (instanced), curtainMaterial.js,
 │       │                  textureCache.js (LRU VRAM), curtainState.js (sync), photos.js (your data)
 │       ├── audio/         SpatialAudio.jsx (music, step events, reverb), footstepSynth.js, reverb.js,
 │       │                  Voice.jsx + voiceNet.js (WebRTC voice chat, positioned)
-│       ├── hud/           Hud.jsx (invite link, room name, captions), Toolbar.jsx (mic, Add memory), MemoryModal.jsx
+│       ├── hud/           Hud.jsx (invite link, room name, captions), Toolbar.jsx (mic, Add memory), MemoryModal.jsx,
+│       │                  CoupleControls.jsx (emotes, sit, together), PhotoMode.jsx
+│       ├── photo/         PhotoCapture.jsx (high-res capture), polaroid.js (the print)
 │       └── utils/         math.js (damped smoothing)
 ├── server/                Node 20+ · Socket.io 4
 │   └── src/
@@ -53,7 +61,8 @@ buffer-zone/
 │       ├── memories.js    HTTP upload and download of photos players add (see docs/MEMORIES.md)
 │       └── validate.js    pure input checks: key normalisation, payload sanitising, voice signals, image sniffing
 ├── server/test/           node:test unit tests (run: npm test)
-├── docs/                  ROOMS.md, PERFORMANCE.md, GALLERY.md, VOICE.md, AUDIO.md, MEMORIES.md
+├── docs/                  ROOMS.md, PERFORMANCE.md, GALLERY.md, VOICE.md, AUDIO.md, MEMORIES.md, COUPLE.md,
+│                          ATMOSPHERE.md
 └── scripts/               copy-decoders.mjs, fetch-assets.mjs, make-standins.mjs,
                            dress-avatars.py + avatar_tools/ (builds the Nepali-dressed avatars)
 ```
@@ -104,10 +113,12 @@ Single Node process, in-memory rooms (`server/src/rooms.js`).
 | S→C | `gallery:curtain` | `{ id, open }` | The partner's click, mirrored |
 | S→C | `gallery:state` | `{ [id]: bool }` | Held curtains, sent on join and resume |
 | both | `voice:signal` | `{ sid, kind, data }` | WebRTC offer / answer / ICE candidate / bye, relayed to the partner only (burst 40, 20/s) |
-| S→C | `gallery:memories` | `[{ id, index, caption, date, type }]` | Photos the players added, on join and resume |
-| S→C | `gallery:memory` | `{ id, index, caption, date, type }` | A photo was added (both players) |
+| S→C | `gallery:memories` | `[{ id, spot, caption, date, type }]` | Photos the players added, on join and resume |
+| S→C | `gallery:memory` | `{ id, spot, caption, date, type }` | A photo was added (both players) |
 | C→S | `gallery:memory-remove` | `{ id }` | Take a photo down; answered by `gallery:memory-removed` |
-| HTTP | `POST /api/rooms/:room/memories` | image bytes | Upload, authorised by the room token (1.5 MB max) |
+| HTTP | `POST /api/rooms/:room/memories` | image bytes | Upload, authorised by the room token (1.5 MB max); `X-Spots` lists the curtains nearest the player |
+| both | `emote` | `{ id }` | wave, kiss, heart, cheer, clap, laugh, relayed to the partner (burst 6, 2/s, shared with `together`) |
+| both | `together` | `{ kind }` | Walk together: `request`, `accept`, `end` |
 | HTTP | `GET /api/rooms/:room/memories/:id` | — | The image, addressed by an unguessable id |
 
 Bandwidth: about 60 bytes × 20 Hz × 2 directions ≈ 2.4 KB/s per player. Latency is one network RTT plus
@@ -167,7 +178,10 @@ The tier is chosen by `PerfGovernor` from the measured frame rate (target min(re
 - **Footsteps:** one sound per foot contact, from the avatar's animation, for both players: stone or the stair's carpet, walk or
   run, eight variants, positioned where the foot landed, in a stone-hall reverb ([docs/AUDIO.md](docs/AUDIO.md)).
 - **Voice chat:** press V. Peer-to-peer WebRTC, positioned and dulled with distance ([docs/VOICE.md](docs/VOICE.md)).
-- **Add memory:** upload your own photos onto the walls, live, for both of you ([docs/MEMORIES.md](docs/MEMORIES.md)).
+- **Add memory:** upload your own photos onto the curtain you're standing at, live, for both of you
+  ([docs/MEMORIES.md](docs/MEMORIES.md)).
+- **Together:** emotes (1–6), sitting (E), walking hand in hand (H) and a polaroid photo mode (C); keys and details in
+  [docs/COUPLE.md](docs/COUPLE.md).
 - **Invite link:** the host's key card has a **Copy invite link** button; opening `…/#room=KEY` joins the room with no typing.
   The key is in the URL fragment, which browsers never send to a server.
 - **Autoplay:** the Create/Join click in the lobby calls `AudioContext.resume()`. Music starts as soon as it has loaded, and on
@@ -353,7 +367,8 @@ Done so far: camera occlusion, snapshot interpolation, walk/run phase lock, the 
 the lobby's offline state, key normalisation, unit tests, graceful shutdown, two retargeted avatars with head-look, five
 rooms with a grand stair, 18 themed paintings, zone culling and pooled practical lights, Nepali-dressed avatars with their own
 motion capture, spatial voice chat, footsteps from real foot contacts with a hall reverb, contact shadows and dust motes, invite
-links, and photo uploads.
+links, photo uploads, emotes, sitting, walking together, a polaroid photo mode, and the golden-hour palazzo (sky, glass roof,
+chandeliers, marble floor, lounge, fountain, greenery).
 
 Next, in order of value for the effort:
 
@@ -363,7 +378,7 @@ Next, in order of value for the effort:
 3. **Foot IK on the stair** — feet sit within 9 cm of each tread on the ramp collider; a two-bone IK pass with a
    downward ray per foot would plant them exactly.
 4. **Curtain foley** — a positional rustle when a curtain starts to move (the footstep player's pool of sounds can carry it).
-5. **Sit interactions** — sensor colliders on benches and the hearth, E to sit, a kinematic snap and a sit clip.
+5. **Piano you can play** — the lounge's piano bench is a seat; a few keys mapped to sampled notes would make it an instrument.
 6. **Baked lighting** — bake the practical lights and the sun into a lightmap (`LIGHTMAP_URL`), then drop the pool.
 7. **Movement over WebRTC data channels** (for example Geckos.io), with client-side prediction. Worth it only once
    players are far apart on the network: with two players and 110 ms of interpolation, WebSocket is already smooth.

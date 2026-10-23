@@ -9,7 +9,7 @@ import { usePerf } from '../state/perf';
 // columns and the two of you. Only the open courtyard gets it; the aisles keep their old stone.
 //
 // Reflections are real (a mirrored render of the scene, blurred by roughness) in the high and cinematic tiers;
-// the low tier keeps the same marble with environment gloss only, since the mirror pass redraws the scene.
+// the medium and low tiers keep the same marble with environment gloss only, since the mirror pass redraws the scene.
 
 const AREA = { x0: -16.9, x1: 15.5, z0: -3.0, z1: 2.1 }; // inside the colonnades' plinths, wall to wall
 const LIFT = 0.006; // above the old floor: clears it without a visible step
@@ -133,7 +133,7 @@ export default function MarbleFloor() {
     assets.plain.dispose();
   }, [assets]);
 
-  const mirror = tier !== 'low';
+  const mirror = tier === 'high' || tier === 'cinematic'; // medium and low: environment gloss only
   const cx = (AREA.x0 + AREA.x1) / 2;
   const cz = (AREA.z0 + AREA.z1) / 2;
 
