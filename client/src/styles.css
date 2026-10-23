@@ -458,7 +458,7 @@ button:disabled {
 .couple-prompts {
   position: absolute;
   left: 50%;
-  bottom: 84px;
+  bottom: 24px;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -491,47 +491,78 @@ button:disabled {
   }
 }
 
+/* A slim rail down the left edge: each action is an icon with its key in the corner; its name appears on hover. */
 .emote-bar {
   position: absolute;
-  left: 50%;
-  bottom: 16px;
-  transform: translateX(-50%);
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.5rem;
+  gap: 0.3rem;
+  padding: 0.4rem;
   background: var(--panel);
-  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
   pointer-events: auto;
 }
 
 .emote {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   background: transparent;
   color: inherit;
   border: 1px solid transparent;
-  border-radius: 999px;
-  padding: 0.25rem 0.5rem;
-  font-size: 1rem;
+  border-radius: 12px;
+  font-size: 1.35rem;
+  line-height: 1;
   cursor: pointer;
 }
 
-.emote:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.3);
+.emote:hover:not(:disabled),
+.emote:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
 .emote kbd {
-  padding: 0 0.3rem;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  padding: 0 0.22rem;
   border-radius: 4px;
-  font-size: 0.7rem;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--muted);
+  font-size: 0.62rem;
+  line-height: 1.25;
 }
 
-.emote.wide {
-  font-size: 0.9rem;
-  padding: 0.25rem 0.7rem;
+/* The name, sliding out to the right on hover */
+.emote::after {
+  content: attr(data-label);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translate(-4px, -50%);
+  padding: 0.25rem 0.6rem;
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s, transform 0.12s;
+}
+
+.emote:hover::after,
+.emote:focus-visible::after {
+  opacity: 1;
+  transform: translate(0, -50%);
 }
 
 .emote.on {
@@ -540,13 +571,14 @@ button:disabled {
 
 .emote.ask {
   border-color: #f08aa5;
+  animation: nudge 1.6s ease-in-out infinite;
 }
 
 .emote-sep {
-  width: 1px;
-  height: 1.4rem;
+  width: 26px;
+  height: 1px;
   background: rgba(255, 255, 255, 0.25);
-  margin: 0 0.2rem;
+  margin: 0.15rem 0;
 }
 
 .photo-mode {

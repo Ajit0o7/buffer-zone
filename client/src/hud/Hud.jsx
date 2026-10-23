@@ -91,7 +91,7 @@ export default function Hud() {
       {locked && <div className="crosshair" aria-hidden="true" />}
 
       {!locked && (
-        <div className="hint">Click to look around · WASD walk · Shift run · Click a curtain to open it · E sit · H walk together · 1–6 emotes · C photo · V voice · M add a photo · Esc to free the mouse</div>
+        <div className="hint">Click to look around · WASD walk · Shift run · E sit · Click a curtain to open it · Esc frees the mouse</div>
       )}
 
       {role === 'host' && roomKey && !peerConnected && <KeyCard roomKey={roomKey} />}

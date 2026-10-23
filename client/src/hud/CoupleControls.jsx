@@ -48,13 +48,14 @@ export default function CoupleControls({ disabled }) {
           {prompt && <p className="prompt">{prompt}</p>}
         </div>
       )}
-      <div className="emote-bar" role="toolbar" aria-label="Emotes">
+      <div className="emote-bar" role="toolbar" aria-label="Emotes and togetherness" aria-orientation="vertical">
         {EMOTE_IDS.map((id) => (
           <button
             key={id}
             type="button"
             className="emote"
-            title={`${EMOTES[id].label} (${EMOTES[id].key})`}
+            data-label={EMOTES[id].label}
+            aria-label={`${EMOTES[id].label} (${EMOTES[id].key})`}
             onClick={() => sendEmote(id)}
             disabled={seated && !EMOTES[id].seated}
           >
@@ -65,16 +66,19 @@ export default function CoupleControls({ disabled }) {
         <span className="emote-sep" aria-hidden="true" />
         <button
           type="button"
-          className={`emote wide${together === 'on' ? ' on' : ''}${together === 'invited' ? ' ask' : ''}`}
+          className={`emote${together === 'on' ? ' on' : ''}${together === 'invited' ? ' ask' : ''}`}
           onClick={toggleTogether}
           disabled={!peerConnected}
-          title="Walk together, hand in hand (H)"
+          data-label={together === 'on' ? 'Let go' : 'Walk together'}
+          aria-label="Walk together, hand in hand (H)"
           aria-pressed={together === 'on'}
         >
-          <span aria-hidden="true">🤝</span> Together <kbd>H</kbd>
+          <span aria-hidden="true">🤝</span>
+          <kbd>H</kbd>
         </button>
-        <button type="button" className="emote wide" onClick={togglePhotoMode} title="Photo mode (C)">
-          <span aria-hidden="true">📷</span> Photo <kbd>C</kbd>
+        <button type="button" className="emote" onClick={togglePhotoMode} data-label="Photo mode" aria-label="Photo mode (C)">
+          <span aria-hidden="true">📷</span>
+          <kbd>C</kbd>
         </button>
       </div>
     </>
