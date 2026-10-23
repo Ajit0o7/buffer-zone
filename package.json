@@ -1,0 +1,13 @@
+{
+  "name": "buffer-zone",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Our House - a private two-player 3D mansion",
+  "scripts": {
+    "dev": "npm run dev --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "build": "npm run build --prefix client",
+    "test": "npm test --prefix server"
+  }
+}
