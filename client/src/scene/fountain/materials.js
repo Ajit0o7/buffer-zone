@@ -42,17 +42,19 @@ export function marbleMaterial() {
         `#include <color_fragment>
         float veinAmount;
         {
-          vec3 p = vMarble * 2.3 + vec3(11.0, 3.0, 7.0);
+          vec3 p = vMarble * 3.0 + vec3(11.0, 3.0, 7.0);
           float warp = fNoise3(p) * 0.5 + fNoise3(p * 2.1) * 0.27 + fNoise3(p * 4.3) * 0.15 + fNoise3(p * 8.9) * 0.08;
-          // Main veins: thin lines where a warped diagonal field crosses zero; finer hairlines between them.
-          float main = 1.0 - abs(sin(dot(p, vec3(0.55, 0.8, 0.3)) * 1.7 + warp * 7.0));
-          float hair = 1.0 - abs(sin(dot(p, vec3(-0.4, 0.35, 0.85)) * 4.1 + warp * 11.0));
-          float veins = pow(main, 26.0) * 0.85 + pow(hair, 60.0) * 0.4;
-          veins *= smoothstep(0.25, 0.6, fNoise3(p * 0.7 + 4.0)) * 0.7 + 0.3; // veins come and go
+          // Main veins: thin lines where a warped diagonal field crosses zero, each with a soft grey halo;
+          // finer hairlines between them.
+          float main = 1.0 - abs(sin(dot(p, vec3(0.55, 0.8, 0.3)) * 2.4 + warp * 7.0));
+          float hair = 1.0 - abs(sin(dot(p, vec3(-0.4, 0.35, 0.85)) * 5.0 + warp * 11.0));
+          float veins = pow(main, 16.0) * 0.9 + pow(main, 3.0) * 0.12 + pow(hair, 40.0) * 0.45;
+          veins *= smoothstep(0.2, 0.6, fNoise3(p * 0.6 + 4.0)) * 0.75 + 0.25; // veins come and go
+          veins *= 1.0 - 0.75 * smoothstep(0.9, 1.0, vWet); // under water they'd read as cracks in its surface
           veinAmount = clamp(veins, 0.0, 1.0);
           float cloud = fNoise3(p * 1.3 + 9.0) * 0.6 + fNoise3(p * 5.0) * 0.4; // soft milky clouding
-          vec3 stone = mix(vec3(0.95, 0.925, 0.875), vec3(0.985, 0.975, 0.955), cloud);
-          stone = mix(stone, vec3(0.55, 0.54, 0.53), veinAmount * 0.75);
+          vec3 stone = mix(vec3(0.74, 0.7, 0.64), vec3(0.85, 0.83, 0.79), cloud);
+          stone = mix(stone, vec3(0.36, 0.35, 0.34), veinAmount * 0.85);
           diffuseColor.rgb *= stone * mix(1.0, 0.72, vWet);
         }`,
       )
@@ -73,7 +75,7 @@ export function marbleMaterial() {
  */
 export function waterMaterial(time) {
   const material = new MeshStandardMaterial({
-    color: new Color('#1b3a33'),
+    color: new Color('#1a4438'),
     roughness: 0.05,
     metalness: 0,
     envMapIntensity: 1,
@@ -92,22 +94,39 @@ export function waterMaterial(time) {
         varying vec3 vPool;
         varying vec3 vWater;
         ${NOISE}
-        // Distance from p to the nearest place a stream lands (pool: x streams, y landing radius, z seed),
-        // and that stream's own random number.
-        vec2 fLanding(vec2 p) {
-          if (vPool.x < 0.5) return vec2(abs(length(p) - vPool.y), fHash12(floor(p * 3.0)));
-          float a = atan(p.x, p.y) / 6.2831853 * vPool.x - 0.5;
-          float k = floor(a + 0.5);
+        // Distance from p to the stream landing nearest it (pool: x streams, y landing radius, z seed).
+        float fNearest(vec2 p) {
+          if (vPool.x < 0.5) return abs(length(p) - vPool.y);
+          float k = floor(atan(p.x, p.y) / 6.2831853 * vPool.x);
           float phi = (k + 0.5) / vPool.x * 6.2831853;
-          return vec2(length(p - vPool.y * vec2(sin(phi), cos(phi))), fHash11(k + vPool.z * 17.0));
+          return length(p - vPool.y * vec2(sin(phi), cos(phi)));
+        }
+        // Rings spreading from each landing. The three nearest streams are summed, each faded to nothing
+        // before it drops out of that set, so the pattern has no seams between streams.
+        float fRings(vec2 p, float t) {
+          float wobble = 0.03 * fNoise2(p * 9.0 + t * 0.3); // wobbly, not perfect circles
+          if (vPool.x < 0.5) {
+            float d = abs(length(p) - vPool.y) + wobble;
+            return sin(d * 55.0 - t * 7.0 - fNoise2(p * 3.0) * 6.28) * exp(-d * 6.0);
+          }
+          float spacing = 6.2831853 * vPool.y / vPool.x;
+          float k0 = floor(atan(p.x, p.y) / 6.2831853 * vPool.x);
+          float h = 0.0;
+          for (int j = -1; j <= 1; j++) {
+            float k = k0 + float(j);
+            float phi = (k + 0.5) / vPool.x * 6.2831853;
+            float d = length(p - vPool.y * vec2(sin(phi), cos(phi))) + wobble;
+            float r = fHash11(mod(k, vPool.x) + vPool.z * 17.0);
+            float pulse = 0.55 + 0.45 * sin(t * (1.1 + r) + r * 40.0); // each stream's flow surges in its own time
+            h += pulse * sin(d * 55.0 - t * 7.0 - r * 6.28) * exp(-d * 6.0) * (1.0 - smoothstep(0.6, 1.2, d / spacing));
+          }
+          return h;
         }
         float fWaterHeight(vec2 p) {
           float t = uTime;
-          float h = fNoise2(p * 6.0 + vec2(t * 0.11, t * 0.05)) * 0.6 + fNoise2(p * 11.0 - vec2(t * 0.07, -t * 0.13)) * 0.4;
-          h *= 0.006;
-          vec2 land = fLanding(p);
-          float d = land.x + 0.012 * fNoise2(p * 25.0);
-          h += 0.0035 * sin(d * 60.0 - t * 8.0 - land.y * 6.28) * exp(-d * 7.0);
+          float h = fNoise2(p * 5.0 + vec2(t * 0.11, t * 0.05)) * 0.55 + fNoise2(p * 9.0 - vec2(t * 0.07, -t * 0.13)) * 0.3 + fNoise2(p * 23.0 + vec2(-t * 0.2, t * 0.1)) * 0.15;
+          h *= 0.009;
+          h += 0.0028 * fRings(p, t);
           return h;
         }`,
       )
@@ -120,11 +139,10 @@ export function waterMaterial(time) {
           float h0 = fWaterHeight(p);
           vec3 n = normalize(vec3(-(fWaterHeight(p + vec2(e, 0.0)) - h0) / e, 1.0, -(fWaterHeight(p + vec2(0.0, e)) - h0) / e));
           normal = normalize((viewMatrix * vec4(n, 0.0)).xyz);
-          vec2 land = fLanding(p);
-          float foam = exp(-land.x * 16.0) * smoothstep(0.35, 0.75, fNoise2(p * 38.0 + vec2(0.0, uTime * 1.7)) * 0.6 + fNoise2(p * 90.0 - uTime * 2.3) * 0.4 + 0.15);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.8, 0.86, 0.84), foam * 0.75);
+          float foam = exp(-fNearest(p) * 22.0) * smoothstep(0.3, 0.8, fNoise2(p * 26.0 + vec2(0.0, uTime * 1.7)) * 0.6 + fNoise2(p * 70.0 - uTime * 2.3) * 0.4);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.75, 0.8, 0.78), foam * 0.6);
           float facing = abs(dot(normal, normalize(vViewPosition)));
-          diffuseColor.a = clamp(mix(0.97, 0.62, facing) + foam * 0.3, 0.0, 1.0);
+          diffuseColor.a = clamp(mix(0.97, 0.55, facing) + foam * 0.3, 0.0, 1.0);
         }`,
       );
   };
@@ -163,31 +181,36 @@ export function fallsMaterial(time) {
           float flow = v - uTime / vFall.z * 0.9; // scrolls one fall-length per fall time (a touch slower reads better)
           float mask;
           float across;
+          float rim = 0.0; // 0 at a stream's core, 1 at its edge
           if (streams > 0.5) {
             float s = u * streams;
             float k = floor(s);
             float r = fHash11(k + vFall.y * 17.0);
-            float f = fract(s) - 0.5 + 0.05 * sin(v * 9.0 + r * 30.0 + uTime * 2.5); // a little sway
-            float width = mix(0.2, 0.36, r) * (1.0 - 0.4 * v); // narrows as it speeds up
-            mask = smoothstep(width, width * 0.4, abs(f));
-            across = s * 9.0;
+            float f = fract(s) - 0.5 + 0.04 * sin(v * 9.0 + r * 30.0 + uTime * 2.5); // a little sway
+            float width = mix(0.16, 0.3, r) * (1.0 - 0.45 * v); // narrows as it speeds up
+            mask = smoothstep(width, width * 0.8, abs(f));
+            rim = clamp(abs(f) / width, 0.0, 1.0);
+            across = s * 7.0;
           } else {
-            mask = 0.85;
-            across = u * 70.0;
+            mask = 1.0;
+            across = u * 60.0;
           }
           // Streaks: noise stretched along the fall, scrolled down it.
-          float streak = fNoise2(vec2(across, flow * 7.0)) * 0.65 + fNoise2(vec2(across * 2.3, flow * 15.0)) * 0.35;
+          float streak = fNoise2(vec2(across, flow * 6.0)) * 0.6 + fNoise2(vec2(across * 2.7, flow * 14.0)) * 0.4;
+          streak = smoothstep(0.25, 0.85, streak);
           // Near the bottom the sheet tears into drops; at the very top it eases out over the lip.
-          float tear = smoothstep(1.0, 0.6, v + 0.35 * fNoise2(vec2(across * 1.7, flow * 22.0)));
-          float ease = smoothstep(0.0, 0.06, v);
-          diffuseColor.a = mask * tear * ease * (0.22 + 0.6 * streak * streak);
-          diffuseColor.rgb *= 0.85 + 0.3 * streak;
+          float tear = smoothstep(1.0, 0.7, v + 0.3 * fNoise2(vec2(across * 1.7, flow * 22.0)));
+          float ease = smoothstep(0.0, 0.05, v);
+          // A stream is a rope of clear water: see-through in the middle, bright where its sides turn away.
+          float body = 0.18 + 0.55 * streak + 0.5 * pow(rim, 3.0);
+          diffuseColor.a = clamp(mask * tear * ease * body, 0.0, 0.9);
+          diffuseColor.rgb *= 0.8 + 0.4 * streak;
         }`,
       )
       .replace(
         '#include <emissivemap_fragment>',
         // Light caught inside the falling water: keeps the sheets visible even in shade.
-        '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.06, 0.065, 0.06) * diffuseColor.a;',
+        '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.09, 0.1, 0.095) * diffuseColor.a;',
       );
   };
   material.customProgramCacheKey = () => 'fountain-falls';

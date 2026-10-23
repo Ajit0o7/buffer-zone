@@ -15,6 +15,7 @@ import { nearestSeat, SEATS } from '../world/seats';
 import { endTogether } from '../net/coupleNet';
 
 const UP = new Vector3(0, 1, 0);
+const NO_TURN = { x: 0, y: 0, z: 0, w: 1 };
 
 
 // Rapier character controller. It moves the capsule by shape-casting, so it can't tunnel through
@@ -111,6 +112,30 @@ export default function LocalPlayer({ avatarId }) {
     };
   }, [world]);
 
+  // Is there room for a standing player (capsule centre at x, y, z)? Only the house and props count.
+  const standShape = useMemo(() => new rapier.Capsule(CAPSULE.halfHeight, CAPSULE.radius - 0.02), [rapier]);
+  const roomAt = (x, y, z) => {
+    let blocked = false;
+    world.intersectionsWithShape({ x, y, z }, NO_TURN, standShape, () => {
+      blocked = true;
+      return false;
+    }, rapier.QueryFilterFlags.ONLY_FIXED);
+    return !blocked;
+  };
+  const standingSpot = (seat, from) => {
+    const y = seat.exit.y + CAPSULE.center + 0.05;
+    const dx = seat.exit.x - seat.point.x;
+    const dz = seat.exit.z - seat.point.z;
+    for (const turn of [0, 0.6, -0.6, 1.2, -1.2]) {
+      const c = Math.cos(turn);
+      const sn = Math.sin(turn);
+      const x = seat.point.x + dx * c + dz * sn;
+      const z = seat.point.z - dx * sn + dz * c;
+      if (roomAt(x, y, z)) return { x, y, z };
+    }
+    return { x: from.x, y: from.y + 0.05, z: from.z };
+  };
+
   // Development only (stripped from production builds): lets tests and the console move the player.
   useEffect(() => {
     if (!import.meta.env.DEV) return undefined;
@@ -205,11 +230,13 @@ export default function LocalPlayer({ avatarId }) {
     } else {
       if (!anyMove) sit.armed = true; // the walking key that brought me here must be let go of first
       if (pressed || (sit.armed && sit.t >= 1 && anyMove)) {
-        const exit = sit.seat.exit;
+        // Stand up in front of the seat, or, if something is there, beside it, or back where I sat down from:
+        // never inside a wall, where the controller couldn't move again.
+        const spot = standingSpot(sit.seat, sit.from);
         sit.seat = null;
-        x = exit.x;
-        y = exit.y + CAPSULE.center + 0.05;
-        z = exit.z;
+        x = spot.x;
+        y = spot.y;
+        z = spot.z;
         motion.velocity.set(0, 0, 0);
         motion.verticalSpeed = 0;
         motion.grounded = false;

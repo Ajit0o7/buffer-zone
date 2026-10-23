@@ -76,7 +76,7 @@ export default function HearthFX() {
 
     // Sound: made once the game's listener exists, started once the browser lets audio play.
     if (!state.sound) {
-      const listener = camera.children.find((c) => c.isAudioListener);
+      const listener = camera.children.find((c) => c.type === 'AudioListener'); // added by audio/SpatialAudio.jsx
       if (listener) {
         const sound = new PositionalAudio(listener);
         sound.setBuffer(createFireBuffer(listener.context));

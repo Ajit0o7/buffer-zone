@@ -58,9 +58,13 @@ export default function Fountain({ stoneMap = null }) {
   useEffect(() => {
     const idle = window.requestIdleCallback ?? ((fn) => setTimeout(fn, 200));
     const cancelIdle = window.cancelIdleCallback ?? clearTimeout;
-    const job = idle(() => {
-      audio.buffer = createFountainBuffer(AudioContext.getContext(), SOUND.seconds);
-    });
+    // The timeout matters: a page that never goes idle (a slow GPU) would otherwise never get its sound.
+    const job = idle(
+      () => {
+        audio.buffer = createFountainBuffer(AudioContext.getContext(), SOUND.seconds);
+      },
+      { timeout: 3000 },
+    );
     return () => {
       cancelIdle(job);
       const { sound } = audio;
@@ -83,7 +87,7 @@ export default function Fountain({ stoneMap = null }) {
 
     if (audio.playing || !audio.buffer) return;
     if (!audio.sound) {
-      const listener = camera.children.find((c) => c.isAudioListener);
+      const listener = camera.children.find((c) => c.type === 'AudioListener' || c.isAudioListener); // three sets no isAudioListener flag
       if (!listener || !group.current) return; // SpatialAudio hasn't mounted yet: try again next frame
       const sound = new PositionalAudio(listener);
       sound.setBuffer(audio.buffer);

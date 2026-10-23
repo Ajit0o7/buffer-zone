@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useRapier } from '@react-three/rapier';
 import {
+  Color,
   DataTexture,
   Euler,
   Matrix4,
   MeshBasicMaterial,
-  MeshStandardMaterial,
   PlaneGeometry,
   Quaternion,
   RGBAFormat,
@@ -35,7 +35,9 @@ const BLANK = new DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, RGBAFo
 BLANK.colorSpace = SRGBColorSpace;
 BLANK.needsUpdate = true;
 
-const PHOTO_GLOW = 0.28; // how much of a photo's brightness is its own light
+// White in a photo shows at this level: under the bloom threshold (0.82), and after ACES tone mapping its mid-tones
+// land within a few percent of the original.
+const PHOTO_LEVEL = new Color(0.78, 0.78, 0.78);
 const SNAP_PROBE = 0.8; // the wall probe starts this far in front of the configured anchor
 const SNAP_REACH = 3.5; // and searches this far behind it
 const SNAP_GAP = 0.02; // gap left between the wall and the back of the frame
@@ -112,22 +114,10 @@ export default function CurtainPhotoFrame({ photo, index }) {
   const painting = useRef();
   const hitbox = useRef();
 
-  const material = useMemo(
-    () => // A print, not a mirror: matte, with a share of its own light (the emissive map is the photo again) so it reads
-    // clearly from across the room whatever the lamps and the sky are doing, instead of dull and patchy.
-    new MeshStandardMaterial({
-      map: BLANK,
-      emissive: 0xffffff,
-      emissiveMap: BLANK,
-      emissiveIntensity: PHOTO_GLOW,
-      roughness: 0.92,
-      metalness: 0,
-      envMapIntensity: 0.3,
-      transparent: true,
-      opacity: 0,
-    }),
-    [],
-  );
+  // Photos are shown as they are: unlit (no lamp, sky or spotlight changes them) and slightly below full white, so
+  // that after the final tone mapping their colours come out close to the original and their highlights stay
+  // under the bloom threshold (a lit, glowing print came out washed and hazy).
+  const material = useMemo(() => new MeshBasicMaterial({ map: BLANK, color: PHOTO_LEVEL, transparent: true, opacity: 0 }), []);
 
   // Configured anchor, in world space. photos.js is written at the house's authored scale.
   const configured = useMemo(() => {
@@ -187,7 +177,7 @@ export default function CurtainPhotoFrame({ photo, index }) {
           return;
         }
         fitCover(texture);
-        material.map = material.emissiveMap = texture;
+        material.map = texture;
         st.tex = 'ready';
       },
       (err) => {
@@ -199,7 +189,7 @@ export default function CurtainPhotoFrame({ photo, index }) {
   };
 
   const unloadPhoto = () => {
-    material.map = material.emissiveMap = BLANK;
+    material.map = BLANK;
     st.tex = 'idle';
     st.fade = 0;
     releaseTexture(photo.src);
@@ -219,7 +209,7 @@ export default function CurtainPhotoFrame({ photo, index }) {
       gallery.clear(index);
       if (st.tex === 'ready') {
         releaseTexture(photo.src);
-        material.map = material.emissiveMap = BLANK;
+        material.map = BLANK;
       }
       st.tex = 'idle';
       st.loadToken += 1; // a fetch still in flight releases itself when it lands

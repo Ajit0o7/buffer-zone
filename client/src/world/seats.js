@@ -35,10 +35,11 @@ const stairSeats = [6, 14, 24].flatMap((k) => {
 
 export const BENCH = { length: 1.9, depth: 0.55, height: 0.46, slab: 0.12 };
 
-// Benches: [x, floor y, z, facing yaw]. Two in the nave facing the stair, two on the east bridge looking out over the nave.
+// Benches: [x, floor y, z, facing yaw]. Two facing each other across the courtyard by the fountain, along its edges
+// (clear of the colonnades, whose hanging banners are solid), and two on the east bridge looking out over the nave.
 export const BENCHES = [
-  { id: 'nave-south', x: -9, y: 0, z: -3, yaw: Math.PI / 2 },
-  { id: 'nave-north', x: -9, y: 0, z: 3, yaw: Math.PI / 2 },
+  { id: 'nave-south', x: -9.2, y: 0, z: -2.45, yaw: 0 },
+  { id: 'nave-north', x: -9.2, y: 0, z: 1.55, yaw: Math.PI },
   { id: 'bridge-south', x: 13.9, y: 4.99, z: -3.9, yaw: -Math.PI / 2 },
   { id: 'bridge-north', x: 13.9, y: 4.99, z: 3.9, yaw: -Math.PI / 2 },
 ];
