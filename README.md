@@ -1,7 +1,7 @@
 # Our House — a private two-player 3D mansion
 
 A web-native, real-time 3D home for two people. The host creates a room and shares a key; the guest
-enters it, and the two of them (two young men, each with their own avatar) walk through a cathedral-scale
+enters it, and the two of them, a young man and a young woman in Nepali dress, walk through a cathedral-scale
 palace of five rooms. Eighteen photos, grouped by theme, hang behind velvet curtains that part as you approach,
 and a grand staircase climbs to the Upper Sunset Balcony.
 
@@ -16,7 +16,7 @@ buffer-zone/
 │   ├── .env.example       VITE_SERVER_URL
 │   ├── vite.config.js     code-splitting for the 3D engine
 │   ├── public/            static, cacheable assets (served as-is)
-│   │   ├── models/        mansion.glb (Sponza interior), avatars/{boy1,boy2}.glb, animations/locomotion.glb
+│   │   ├── models/        mansion.glb (Sponza interior), avatars/{boy,girl}.glb (committed), animations/locomotion.glb
 │   │   ├── hdri/          venice_sunset_1k.hdr (image-based lighting)
 │   │   ├── photos/        your photos, referenced by gallery/photos.js (placeholders until you add yours)
 │   │   ├── audio/         footstep.wav, romantic-theme.wav (placeholders until you add yours)
@@ -50,7 +50,8 @@ buffer-zone/
 │       └── validate.js    pure input checks: key normalisation, payload sanitising
 ├── server/test/           node:test unit tests (run: npm test)
 ├── docs/                  ROOMS.md, PERFORMANCE.md, GALLERY.md
-└── scripts/               copy-decoders.mjs, fetch-assets.mjs, make-standins.mjs
+└── scripts/               copy-decoders.mjs, fetch-assets.mjs, make-standins.mjs,
+                           dress-avatars.py + avatar_tools/ (builds the Nepali-dressed avatars)
 ```
 
 ---
@@ -118,11 +119,13 @@ the interpolation delay (`INTERP_DELAY_MS = 110` in `world/config.js`).
 - **Camera:** a third-person follow camera, 5.5 m back and 2.4 m up, FOV 60°, near 0.1 / far 250. A Rapier ray from the
   look point to the camera pulls the camera in when a wall is in the way, so the view never clips through the house.
 - **Phase lock:** while walk and run blend, the run clip is set to walk's point in its cycle, so the legs don't ghost.
-- **Avatars:** the host is `boy1` (Mixamo's "Soldier" character), the guest is `boy2` (a Ready Player Me avatar),
-  chosen by role in `AVATAR_BY_ROLE`. Both play one shared motion-capture set (Mixamo idle, walk and run, from the
-  Xbot file), retargeted onto each rig when it loads (`avatar/retarget.js`). The retarget poses the source skeleton
+- **Avatars:** the host is the boy, the guest the girl (`AVATAR_BY_ROLE`). Both are realistic Microsoft Rocketbox
+  characters (MIT licence), dressed in Nepali clothes (see [Nepali dress](#nepali-dress)). Both play one shared
+  motion-capture set (Mixamo idle, walk and run, from the Xbot file), retargeted onto each rig when it loads
+  (`avatar/retarget.js`). The retarget poses the source skeleton
   in world space and carries each bone's rotation from its own rest pose onto the target bone's rest pose, so it
-  copes with different armature rotations and units, T-pose versus A-pose rests, and rigs that face -Z instead of +Z.
+  copes with different armature rotations and units, T-pose versus A-pose rests, rigs that face -Z instead of +Z, and
+  different hierarchies (a 3ds Max Biped hangs the thighs from the spine and the collarbones from the neck).
   Hips translation is rescaled by the ratio of hip heights, so a shorter or taller body keeps its feet on the floor.
 - **Head-look:** when the partner is within 4.5 m and roughly in front, each avatar eases its neck (40 %) and head
   (60 %) toward the partner's eyes, up to 70° sideways and 25° up or down, layered on top of the animation.
@@ -206,8 +209,8 @@ I could not check these live, so verify availability, licences and pricing befor
 - **Gaussian splats (Luma, Polycam)**: a real room scanned into a splat, for a photo-real background. Advanced.
 
 **Avatars**
-- **Ready Player Me**: the high-res GLB avatar you named. Check the service is still active and its licence
-  before building around it.
+- **Microsoft Rocketbox** (MIT): 115 realistic rigged humans; the two avatars here are built from it.
+- **Ready Player Me**: shut down its public service in January 2026; existing GLB files still work.
 - **Character Creator 4 / Avaturn / VRoid Studio**: alternatives if RPM is unavailable.
 - **Mixamo** (Adobe, free with an account): motion-captured clips for idle, walk, run. Export each as FBX, then
   convert to GLB in Blender.
@@ -244,15 +247,42 @@ Assets: download and build the house, avatars and lighting with:
 cd client && npm run assets
 ```
 
-This fetches Khronos **Sponza** (a stone palace interior, about 52 MB, packed to about 11 MB with Draco and WebP), the two
-avatars and their clips from the three.js examples (`boy1.glb`: Mixamo "Soldier"; `boy2.glb`: a Ready Player Me avatar;
-`animations/locomotion.glb`: Mixamo Xbot with motion-capture idle, walk and run), and a Venice sunset HDRI. If the avatar
-downloads fail, it writes simple box-rig stand-ins instead (`node scripts/make-standins.mjs --avatars`), so the scene still
-runs. The house is also its own collider, so walls, columns and floors stop the player.
+This fetches Khronos **Sponza** (a stone palace interior, about 52 MB, packed to about 11 MB with Draco and WebP), the
+motion-capture clips both avatars play (`animations/locomotion.glb`: Mixamo Xbot with idle, walk and run, from the three.js
+examples), and a Venice sunset HDRI. If the clips can't be downloaded, box-rig stand-ins are written instead. The house is also
+its own collider, so walls, columns and floors stop the player.
 
-Licences: these files are third-party. Sponza is under the CRYENGINE Limited License Agreement, the Mixamo characters and clips
-are under Mixamo's terms, and the Ready Player Me avatar under Ready Player Me's. They stay in your local `client/public/`, which
-the `.gitignore` excludes, and should not be published without checking those terms. The HDRI is from Poly Haven (CC0).
+Licences: these files are third-party. Sponza is under the CRYENGINE Limited License Agreement and the Mixamo clips under Mixamo's
+terms. They stay in your local `client/public/`, which the `.gitignore` excludes, and should not be published without checking
+those terms. The HDRI is from Poly Haven (CC0). The two avatars are in the repository: they are derived from Microsoft Rocketbox
+under the MIT licence (`client/public/models/avatars/LICENSE-ROCKETBOX.txt`).
+
+### Nepali dress
+
+![The boy in daura suruwal, waistcoat and Dhaka topi; the girl in kurtha surwal and dupatta](docs/images/nepali-avatars.png)
+
+`scripts/dress-avatars.py` builds `boy.glb` and `girl.glb` from two realistic Microsoft Rocketbox characters:
+
+| | Base | Outfit |
+|---|---|---|
+| Boy (host) | `Male_Adult_10` | cream daura suruwal, black waistcoat with gold buttons, a Dhaka topi, black shoes |
+| Girl (guest) | `Female_Adult_01` | maroon kurtha with a gold floral print and gold trim, cream surwal, a marigold dupatta; hair darkened to black |
+
+How it works: it converts the FBX with FBX2glTF, renames the Biped bones to Mixamo names, then repaints the clothes "in 3D":
+every texel of the body texture is mapped back to the point on the body it covers, so each garment is painted by body region
+(torso, sleeves, legs, feet) while keeping the original folds and shading. The knee-length skirt of the daura and kurtha (the
+kurtha's with side slits), the Dhaka topi (woven pattern, lopsided crown, hair pressed flat underneath) and the dupatta are
+generated as skinned meshes that move with the body.
+
+To change colours or outfits, edit the colour constants and `dress_daura` / `dress_kurtha` in the script, then run
+`python3 scripts/dress-avatars.py` (needs Python 3.9+ with numpy and Pillow, and Node.js for FBX2glTF; it downloads about
+150 MB of source files into `scripts/.avatar-cache/`). To pick other Rocketbox people, change `AVATARS` in the script:
+previews of all of them are in the Rocketbox repository.
+
+Limits: the clothes are painted onto the original outfits' shapes, so the boy's suruwal keeps the cut of track trousers and the
+girl's kurtha keeps a shirt collar and pockets in its relief; the skirts and dupatta are skinned, not simulated cloth, so they
+can clip a little at full stride. For tailored, simulated clothing, a 3D artist would model the garments in Marvelous Designer
+or Blender.
 
 The photos and music are still placeholders. Run `cd client && npm run standins` to regenerate them, and replace them with
 your own files, keeping the same paths. The frame positions in `gallery/photos.js` were found by a search for wall areas flat
@@ -267,8 +297,8 @@ for testing and profiling; production builds strip them.
 **Verifying it yourself**
 
 1. `cd client && npm run assets`, then start the server and client as above. Create a room in one tab, join in another.
-2. Avatars: the host is the Soldier, the guest the Ready Player Me avatar. Walk toward each other: arms hang naturally, both face
-   the way they move, and within 4.5 m each turns to look at the other.
+2. Avatars: the host is the boy in daura suruwal and Dhaka topi, the guest the girl in kurtha surwal and dupatta. Walk toward
+   each other: arms hang naturally, both face the way they move, and within 4.5 m each turns to look at the other.
 3. Rooms: walk east up the grand stair from the spawn, across the landing through either arch, and down onto the bridge.
    Room names fade in as you cross into each room. The hearth is on the north aisle's east half, the study lamps on its west half.
 4. Frame rate: open the browser's performance panel (or add `r3f-perf`), and check frame time stays under 11.1 ms. In the console,

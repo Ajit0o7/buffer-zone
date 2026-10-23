@@ -1,18 +1,21 @@
 // Central tuning constants. Keep asset URLs here so swapping a model never touches gameplay code.
 
 /**
- * Avatars. Each one names its model and the file its locomotion clips come from. Both boys use the
- * same casual motion-capture set (Mixamo's Xbot idle/walk/run), retargeted onto each rig at load
- * time. Mixamo and Ready Player Me rigs share bone names (Mixamo adds a "mixamorig" prefix), so the
- * retarget maps by name and corrects for differing rest poses. See avatar/retarget.js.
+ * Avatars. Each one names its model and the file its locomotion clips come from.
+ *
+ * The boy and the girl are realistic Microsoft Rocketbox characters (MIT licence) dressed in Nepali
+ * clothes by scripts/dress-avatars.py: daura suruwal, waistcoat and Dhaka topi; kurtha surwal and
+ * dupatta. Their bones are renamed to Mixamo's names at build time, so both play the same casual
+ * motion-capture set (Mixamo's Xbot idle/walk/run), retargeted onto each rig at load time
+ * (avatar/retarget.js corrects for the differing rest poses).
  */
 export const AVATARS = {
-  boy1: {
-    url: '/models/avatars/boy1.glb', // host: Mixamo "Soldier", via the three.js examples
+  boy: {
+    url: '/models/avatars/boy.glb', // host
     clipSource: '/models/animations/locomotion.glb',
   },
-  boy2: {
-    url: '/models/avatars/boy2.glb', // guest: Ready Player Me avatar, via the three.js examples
+  girl: {
+    url: '/models/avatars/girl.glb', // guest
     clipSource: '/models/animations/locomotion.glb',
   },
 };
@@ -36,8 +39,8 @@ export const LIGHTMAP_URL = null;
 // (Sponza becomes about 45 m long, 27 m wide and 17 m to the vault). Avatars stay human-sized.
 export const MANSION_SCALE = 1.5;
 
-// The host's seat is boy1, the guest's is boy2.
-export const AVATAR_BY_ROLE = { host: 'boy1', guest: 'boy2' };
+// The host plays the boy, the guest the girl.
+export const AVATAR_BY_ROLE = { host: 'boy', guest: 'girl' };
 export const partnerRole = (role) => (role === 'host' ? 'guest' : 'host');
 
 // Player capsule: 1.8 m tall overall, matching the avatars. The slightly wider radius keeps the player

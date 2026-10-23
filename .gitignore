@@ -6,9 +6,14 @@ dist/
 client/public/draco/
 client/public/basis/
 *.log
+scripts/.avatar-cache/
+__pycache__/
 .DS_Store
 # Large binary assets: keep them in Git LFS or a private bucket, not plain Git
 client/public/models/**/*.glb
+# ...except the two avatars, built from MIT-licensed Rocketbox characters by scripts/dress-avatars.py
+!client/public/models/avatars/boy.glb
+!client/public/models/avatars/girl.glb
 client/public/animations/**/*.glb
 client/public/photos/**
 client/public/hdri/**

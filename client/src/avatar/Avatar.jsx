@@ -55,7 +55,7 @@ const findBone = (root, name) => {
 };
 
 /**
- * @param id         avatar key in AVATARS (boy1 | boy2)
+ * @param id         avatar key in AVATARS (boy | girl)
  * @param motion     object with { speed, yaw }, read every frame (never via React state)
  * @param lookAt     optional { position: Vector3, known: boolean }: the partner's capsule centre
  * @param footOffset vertical offset so the model's feet sit on the physics capsule's base

@@ -3,12 +3,11 @@
 //
 // These are third-party files with their own licences, so they stay local and are gitignored:
 //   - Mansion: Khronos glTF Sample Assets "Sponza" (CRYENGINE Limited License; the metadata is CC-BY 4.0)
-//   - Host avatar (boy1): Mixamo "Soldier", as shipped in the three.js examples (Mixamo terms)
-//   - Shared motion-capture clips (idle, walk, run): Mixamo "Xbot", as shipped in the three.js examples
-//   - Guest avatar (boy2): a Ready Player Me avatar, as shipped in the three.js examples (Ready Player Me terms)
-// If any of the three can't be downloaded, box-built stand-ins (avatars and clips) replace all three,
-// so the rigs and clips always match.
+//   - Motion-capture clips both avatars play (idle, walk, run): Mixamo "Xbot", as shipped in the three.js
+//     examples (Mixamo terms). If they can't be downloaded, box-built stand-in clips are generated.
 //   - Environment: a Venice sunset HDRI (Poly Haven, CC0), as shipped in three.js examples
+// The avatars themselves (models/avatars/boy.glb and girl.glb) are in the repository: realistic Microsoft
+// Rocketbox characters (MIT licence) dressed in Nepali clothes. Rebuild them with scripts/dress-avatars.py.
 // Check the licences before you publish anything built from them.
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -38,13 +37,11 @@ async function pool(tasks, limit) {
 
 const work = mkdtempSync(join(tmpdir(), 'sponza-'));
 try {
-  // 1. Avatars and the clips both of them use.
+  // 1. The clips both avatars play.
   try {
     await download(`${THREE_EXAMPLES}/models/gltf/Xbot.glb`, join(PUBLIC, 'models/animations/locomotion.glb'));
-    await download(`${THREE_EXAMPLES}/models/gltf/Soldier.glb`, join(PUBLIC, 'models/avatars/boy1.glb'));
-    await download(`${THREE_EXAMPLES}/models/gltf/readyplayer.me.glb`, join(PUBLIC, 'models/avatars/boy2.glb'));
   } catch (err) {
-    console.warn(`[assets] avatars unavailable (${err.message}); generating stand-ins instead`);
+    console.warn(`[assets] motion-capture clips unavailable (${err.message}); generating stand-ins instead`);
     execFileSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), 'make-standins.mjs'), '--avatars'], { stdio: 'inherit' });
   }
 

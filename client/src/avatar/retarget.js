@@ -60,10 +60,20 @@ export function facingYaw(root) {
   return Math.atan2(-left.z, left.x); // facing is the left direction turned 90° about +Y
 }
 
-/** World-space pointing direction of a bone: toward its first child that both rigs share. */
-function boneDirection(bone, sharedNames) {
-  const child = bone.children.find((c) => sharedNames.has(normalise(c.name)));
-  if (!child) return null;
+/**
+ * The child both bones point at: the first child of the source bone whose name the target bone also
+ * has as a child. Rigs hang limbs differently (a 3ds Max Biped parents the thighs to the spine and the
+ * collarbones to the neck), so "first child" alone could aim a spine bone at a thigh.
+ */
+function commonChild(targetBone, sourceBone) {
+  const names = new Set(targetBone.children.map((c) => normalise(c.name)));
+  const s = sourceBone.children.find((c) => names.has(normalise(c.name)));
+  if (!s) return null;
+  return [targetBone.children.find((c) => normalise(c.name) === normalise(s.name)), s];
+}
+
+/** World-space direction from a bone to one of its children. */
+function boneDirection(bone, child) {
   const d = child.getWorldPosition(new Vector3()).sub(bone.getWorldPosition(new Vector3()));
   return d.lengthSq() > 1e-10 ? d.normalize() : null;
 }
@@ -127,7 +137,6 @@ export function retargetClip(clip, targetRoot, sourceRoot, { name = clip.name, t
   const turnInv = turn.clone().invert();
 
   // Rest pose: for each target bone, the rotation that would point it like its source bone does at rest.
-  const shared = new Set([...tBones.keys()].filter((n) => sBones.has(n)));
   const reference = new Map(); // target bone -> corrected rest world rotation
   const restWorld = new Map(); // object -> world rotation at rest
   for (const o of [...sOrder, ...tOrder, sHips.parent, tHips.parent]) restWorld.set(o, o.getWorldQuaternion(new Quaternion()));
@@ -135,9 +144,10 @@ export function retargetClip(clip, targetRoot, sourceRoot, { name = clip.name, t
   for (const b of tOrder) {
     const sb = sBones.get(normalise(b.name));
     const ref = restWorld.get(b).clone();
-    if (sb) {
-      const ds = boneDirection(sb, shared);
-      const dt = boneDirection(b, shared);
+    const pair = sb && commonChild(b, sb);
+    if (pair) {
+      const dt = boneDirection(b, pair[0]);
+      const ds = boneDirection(sb, pair[1]);
       if (ds && dt) {
         const align = new Quaternion().setFromUnitVectors(dt, ds.applyQuaternion(turn)); // target rest -> source pose
         ref.premultiply(align);
