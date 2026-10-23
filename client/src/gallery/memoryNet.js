@@ -2,7 +2,9 @@ import { SERVER_URL } from '../net/serverUrl';
 import { useMemories } from '../state/memories';
 import { useSession } from '../state/session';
 import { ROOM_BY_ID } from '../world/rooms';
-import { MEMORY_SLOTS } from './memorySlots';
+import { SPOTS, spotsNearest } from './memorySlots';
+import { localMotion } from '../world/shared';
+import { PHOTOS } from './photos';
 
 // "Add memory": the player picks a photo; the browser shrinks and re-encodes it (which also drops
 // location and camera data); it is POSTed to the server with the room token; the server tells both
@@ -18,7 +20,7 @@ const ERRORS = {
   unreadable: 'That picture could not be opened. Try a JPEG or PNG.',
   unauthorized: 'Your seat in the house has expired. Refresh and rejoin.',
   too_fast: 'Slow down: six photos a minute at most.',
-  room_full: 'The walls are full: twelve memories at most. Remove one first.',
+  room_full: 'Every curtain already has one of your photos. Remove one first.',
   server_full: 'The house has no space left for photos right now.',
   too_large: 'That picture is too large even after shrinking.',
   unsupported_type: 'That picture format is not supported.',
@@ -55,7 +57,11 @@ export async function prepareImage(file) {
 
 /** Uploads a prepared picture. Resolves with the memory the server made; rejects with { code }. */
 export async function uploadMemory({ blob, caption, date }) {
-  const { roomId, token } = useSession.getState();
+  const { roomId, token, activePhoto } = useSession.getState();
+  // Hang it on the curtain I'm standing at: the free spots, nearest first (the server takes the first still free).
+  const taken = new Set(useMemories.getState().list.map((m) => m.spot));
+  const facing = PHOTOS.some((p) => p.id === activePhoto) ? activePhoto : null;
+  const spots = spotsNearest(localMotion.position, taken, facing).slice(0, 64);
   let res;
   try {
     res = await fetch(`${SERVER_URL}/api/rooms/${roomId}/memories`, {
@@ -65,6 +71,7 @@ export async function uploadMemory({ blob, caption, date }) {
         'Content-Type': blob.type,
         'X-Caption': encodeURIComponent(caption.trim().slice(0, 140)),
         'X-Date': date,
+        'X-Spots': spots.join(','),
       },
       body: blob,
     });
@@ -95,9 +102,9 @@ export function bindMemorySocket(socket) {
     setList(list);
   };
   const onAdded = (memory) => {
-    record('added', memory.index);
+    record('added', memory.spot);
     add(memory);
-    const room = ROOM_BY_ID[MEMORY_SLOTS[memory.index]?.room];
+    const room = ROOM_BY_ID[SPOTS[memory.spot]?.room];
     setNotice(`A new memory was hung in the ${room?.name ?? 'house'}`);
   };
   const onRemoved = ({ id }) => {

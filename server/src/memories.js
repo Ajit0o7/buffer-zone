@@ -1,10 +1,12 @@
-import { MAX_MEMORY_BYTES, sanitizeMemoryMeta, sniffImage } from './validate.js';
+import { MAX_MEMORY_BYTES, sanitizeMemoryMeta, sanitizeSpots, sniffImage } from './validate.js';
+import { MEMORY_SPOTS } from './rooms.js';
 
 // HTTP side of "Add memory": a photo is far too big for the socket's 16 KB message limit, so it travels as
 // an ordinary POST, authorised by the same room token the player's socket seat uses.
 //
 //   POST /api/rooms/:roomId/memories      body: the image bytes (WebP, JPEG or PNG, at most 1.5 MB)
-//        Authorization: Bearer <room token>, X-Caption: <URL-encoded text>, X-Date: YYYY-MM-DD
+//        Authorization: Bearer <room token>, X-Caption: <URL-encoded text>, X-Date: YYYY-MM-DD,
+//        X-Spots: <wall spots to try, nearest first, e.g. 4,17,2>
 //   GET  /api/rooms/:roomId/memories/:id  the image. The id is a 128-bit random capability that only
 //                                         the room's two players are ever told.
 //
@@ -32,7 +34,7 @@ export function createMemoryRoutes({ store, originAllowed, announce }) {
       res.setHeader('Vary', 'Origin');
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Caption, X-Date');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Caption, X-Date, X-Spots');
     res.setHeader('Access-Control-Max-Age', '600');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   }
@@ -96,7 +98,8 @@ export function createMemoryRoutes({ store, originAllowed, announce }) {
       if (!type) return json(res, 415, { ok: false, error: 'unsupported_type' }), true;
 
       const meta = sanitizeMemoryMeta({ caption: req.headers['x-caption'], date: req.headers['x-date'] });
-      const result = store.addMemory(roomId, token, { ...meta, type, bytes });
+      const prefer = sanitizeSpots(req.headers['x-spots'], MEMORY_SPOTS);
+      const result = store.addMemory(roomId, token, { ...meta, type, bytes, prefer });
       if (result.error) return json(res, STATUS_FOR[result.error] ?? 400, { ok: false, error: result.error }), true;
 
       announce(result.sockets, result.memory);

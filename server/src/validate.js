@@ -103,6 +103,19 @@ export function sanitizeMemoryMeta({ caption, date }) {
   return { caption: text, date: iso };
 }
 
+/** "X-Spots: 4,17,2": wall spots in order of preference. Returns up to 64 distinct whole numbers below `count`. */
+export function sanitizeSpots(header, count) {
+  if (typeof header !== 'string' || header.length > 400) return [];
+  const out = [];
+  for (const part of header.split(',')) {
+    if (!/^\d{1,3}$/.test(part.trim())) continue;
+    const n = Number(part);
+    if (n < count && !out.includes(n)) out.push(n);
+    if (out.length >= 64) break;
+  }
+  return out;
+}
+
 // ---- Couple interactions -----------------------------------------------------------------------------
 // Emotes and "walk together" are tiny, human-paced messages relayed to the partner. Both are whitelisted:
 // a client can only name things the game already knows, never send free text to the other player.

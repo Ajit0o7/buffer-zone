@@ -2,15 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { socket } from '../net/socket';
 import { useMemories } from '../state/memories';
 import { useSession } from '../state/session';
-import { MAX_MEMORIES } from '../gallery/memorySlots';
+import { MEMORY_SPOTS } from '../gallery/memorySlots';
 import { errorText, prepareImage, removeMemory, uploadMemory } from '../gallery/memoryNet';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const fileDate = (file) => (file?.lastModified ? new Date(file.lastModified).toISOString().slice(0, 10) : today());
 
 /**
- * "Add memory": pick or drop a photo, give it a caption and a date, and it is hung on the next free
- * spot on the walls for both of you. Also lists what has been added, so a photo can be taken down again.
+ * "Add memory": pick or drop a photo, give it a caption and a date, and it is hung behind the curtain you're
+ * standing at (or the nearest free one), for both of you. Also lists what has been added, so a photo can be taken down again.
  */
 export default function MemoryModal({ onClose }) {
   const memories = useMemories((s) => s.list);
@@ -64,14 +64,14 @@ export default function MemoryModal({ onClose }) {
     }
   };
 
-  const full = memories.length >= MAX_MEMORIES;
+  const full = memories.length >= MEMORY_SPOTS;
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="memory-title" tabIndex={-1} ref={dialog}>
         <h2 id="memory-title">Add a memory</h2>
         <p className="modal-note">
-          It hangs on the walls for both of you, behind a curtain. {peerConnected ? '' : 'Your partner will see it when they arrive. '}
+          It hangs behind the curtain nearest you, for both of you. {peerConnected ? '' : 'Your partner will see it when they arrive. '}
           Photos stay in the house until you both leave.
         </p>
 
@@ -117,7 +117,7 @@ export default function MemoryModal({ onClose }) {
 
         {memories.length > 0 && (
           <section className="memory-list" aria-label="Memories you have added">
-            <h3>Added so far ({memories.length}/{MAX_MEMORIES})</h3>
+            <h3>Added so far ({memories.length}/{MEMORY_SPOTS})</h3>
             <ul>
               {memories.map((m) => (
                 <li key={m.id}>

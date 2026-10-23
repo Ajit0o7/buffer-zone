@@ -492,7 +492,7 @@ button:disabled {
 }
 
 /* A slim rail down the left edge: each action is an icon with its key in the corner; its name appears on hover. */
-.emote-bar {
+.rail {
   position: absolute;
   left: 14px;
   top: 50%;
@@ -508,7 +508,7 @@ button:disabled {
   pointer-events: auto;
 }
 
-.emote {
+.rail-btn {
   position: relative;
   display: grid;
   place-items: center;
@@ -524,13 +524,13 @@ button:disabled {
   cursor: pointer;
 }
 
-.emote:hover:not(:disabled),
-.emote:focus-visible {
+.rail-btn:hover:not(:disabled),
+.rail-btn:focus-visible {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.25);
 }
 
-.emote kbd {
+.rail-btn kbd {
   position: absolute;
   right: 3px;
   bottom: 2px;
@@ -543,7 +543,7 @@ button:disabled {
 }
 
 /* The name, sliding out to the right on hover */
-.emote::after {
+.rail-btn::after {
   content: attr(data-label);
   position: absolute;
   left: calc(100% + 10px);
@@ -559,22 +559,61 @@ button:disabled {
   transition: opacity 0.12s, transform 0.12s;
 }
 
-.emote:hover::after,
-.emote:focus-visible::after {
+.rail-btn:hover::after,
+.rail-btn:focus-visible::after {
   opacity: 1;
   transform: translate(0, -50%);
 }
 
-.emote.on {
+.rail-btn.on {
   background: rgba(240, 138, 165, 0.35);
 }
 
-.emote.ask {
+.rail-btn.ask {
   border-color: #f08aa5;
   animation: nudge 1.6s ease-in-out infinite;
 }
 
-.emote-sep {
+.rail.right {
+  left: auto;
+  right: 14px;
+}
+
+/* On the right-hand rail, names slide out to the left */
+.rail.right .rail-btn::after {
+  left: auto;
+  right: calc(100% + 10px);
+  transform: translate(4px, -50%);
+}
+
+.rail.right .rail-btn:hover::after,
+.rail.right .rail-btn:focus-visible::after {
+  transform: translate(0, -50%);
+}
+
+.rail-btn.mic.on {
+  background: rgba(111, 220, 140, 0.22);
+}
+
+.rail-btn.talking {
+  box-shadow: 0 0 0 3px rgba(111, 220, 140, 0.55);
+}
+
+/* "Your partner is speaking" and microphone errors, beside the right-hand rail */
+.rail-notes {
+  position: absolute;
+  right: 80px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  max-width: 22rem;
+  pointer-events: none;
+}
+
+.rail-sep {
   width: 26px;
   height: 1px;
   background: rgba(255, 255, 255, 0.25);

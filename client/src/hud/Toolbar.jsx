@@ -11,7 +11,7 @@ const MIC_ERRORS = {
 };
 
 /**
- * Voice and "Add memory" buttons, bottom right. V toggles the microphone and M opens the Add memory form. The
+ * Voice and "Add memory" buttons, on a rail down the right edge (the left one has the emotes). V toggles the microphone and M opens the Add memory form. The
  * keys matter because, while the mouse is captured for looking around, clicks go to the 3D view, so these
  * buttons can only be clicked after pressing Esc.
  */
@@ -33,25 +33,30 @@ export default function Toolbar({ onAddMemory }) {
   const label = !peerConnected ? 'Waiting for your partner' : status === 'connected' ? 'Connected' : status === 'failed' ? 'Could not connect' : 'Connecting…';
 
   return (
-    <div className="toolbar">
-      {micError && <p role="alert" className="toolbar-error">{MIC_ERRORS[micError]}</p>}
-      <div className="toolbar-row">
-        {speakingPeer && <span className="speaking" aria-live="polite">Your partner is speaking</span>}
+    <>
+      <div className="rail right" role="toolbar" aria-label="Voice and photos" aria-orientation="vertical">
         <button
           type="button"
-          className={`tool${micOn ? ' on' : ''}${speakingSelf ? ' talking' : ''}`}
+          className={`rail-btn mic${micOn ? ' on' : ''}${speakingSelf ? ' talking' : ''}`}
           onClick={toggleMic}
           aria-pressed={micOn}
-          title={`Voice chat: ${label}. Press V.`}
+          data-label={`${micOn ? 'Mic on' : 'Mic off'} · ${label}`}
+          aria-label={`Voice chat: ${label}. Press V.`}
         >
-          <span className="tool-icon" aria-hidden="true">{micOn ? '●' : '○'}</span>
-          {micOn ? 'Mic on' : 'Mic off'} <kbd>V</kbd>
+          <span aria-hidden="true">{micOn ? '🎙️' : '🔇'}</span>
+          <kbd>V</kbd>
         </button>
-        <button type="button" className="tool" onClick={onAddMemory}>
-          <span className="tool-icon" aria-hidden="true">+</span>
-          Add memory <kbd>M</kbd>
+        <button type="button" className="rail-btn" onClick={onAddMemory} data-label="Add a memory here" aria-label="Add a memory (M)">
+          <span aria-hidden="true">🖼️</span>
+          <kbd>M</kbd>
         </button>
       </div>
-    </div>
+      {(speakingPeer || micError) && (
+        <div className="rail-notes">
+          {speakingPeer && <span className="speaking" aria-live="polite">Your partner is speaking</span>}
+          {micError && <p role="alert" className="toolbar-error">{MIC_ERRORS[micError]}</p>}
+        </div>
+      )}
+    </>
   );
 }

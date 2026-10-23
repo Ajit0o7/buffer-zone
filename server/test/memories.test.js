@@ -2,9 +2,9 @@ import { createOriginCheck } from '../src/origins.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { createRoomStore } from '../src/rooms.js';
+import { createRoomStore, MEMORY_SPOTS } from '../src/rooms.js';
 import { createMemoryRoutes } from '../src/memories.js';
-import { sanitizeEmote, sanitizeMemoryMeta, sanitizeState, sanitizeTogether, sanitizeVoiceSignal, sniffImage } from '../src/validate.js';
+import { sanitizeEmote, sanitizeMemoryMeta, sanitizeSpots, sanitizeState, sanitizeTogether, sanitizeVoiceSignal, sniffImage } from '../src/validate.js';
 
 const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.from([0x20, 0, 0, 0]), Buffer.from('WEBPVP8 '), Buffer.alloc(64)]);
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64)]);
@@ -57,7 +57,7 @@ test('voice signalling goes to the partner only while they are connected', () =>
   assert.equal(store.peerSocketId('s-host'), null);
 });
 
-test('memories: need a token, take the lowest free spot, free it when removed, and stop at the room limit', () => {
+test('memories: need a token, take the preferred or lowest free spot, free it when removed, and stop at the room limit', () => {
   const store = createRoomStore();
   const host = store.create('s-host');
   const guest = store.join('s-guest', host.key);
@@ -68,7 +68,7 @@ test('memories: need a token, take the lowest free spot, free it when removed, a
 
   const a = store.addMemory(host.roomId, host.token, photo);
   const b = store.addMemory(host.roomId, guest.token, photo);
-  assert.deepEqual([a.memory.index, b.memory.index], [0, 1]);
+  assert.deepEqual([a.memory.spot, b.memory.spot], [0, 1]);
   assert.deepEqual(a.sockets.sort(), ['s-guest', 's-host']);
   assert.ok(a.memory.id.length >= 22);
   assert.equal(store.memoryList('s-host').length, 2);
@@ -76,15 +76,18 @@ test('memories: need a token, take the lowest free spot, free it when removed, a
 
   assert.equal(store.removeMemory('s-guest', a.memory.id), 's-host');
   assert.equal(store.removeMemory('s-guest', a.memory.id), undefined);
-  assert.equal(store.addMemory(host.roomId, host.token, photo).memory.index, 0); // the freed spot
+  assert.equal(store.addMemory(host.roomId, host.token, photo).memory.spot, 0); // the freed spot
+  // The spot the player is standing at, or the next nearest that's free.
+  assert.equal(store.addMemory(host.roomId, host.token, { ...photo, prefer: [7, 3] }).memory.spot, 7);
+  assert.equal(store.addMemory(host.roomId, host.token, { ...photo, prefer: [7, 3] }).memory.spot, 3);
 
   const roomless = createRoomStore();
   const h = roomless.create('x');
   const now = Date.now();
   let last;
-  for (let i = 0; i < 12; i++) last = roomless.addMemory(h.roomId, h.token, photo, now + i * 60_000);
+  for (let i = 0; i < MEMORY_SPOTS; i++) last = roomless.addMemory(h.roomId, h.token, photo, now + i * 60_000);
   assert.ok(last.memory);
-  assert.equal(roomless.addMemory(h.roomId, h.token, photo, now + 13 * 60_000).error, 'room_full');
+  assert.equal(roomless.addMemory(h.roomId, h.token, photo, now + (MEMORY_SPOTS + 1) * 60_000).error, 'room_full');
 });
 
 test('memories: at most six uploads a minute', () => {
@@ -178,4 +181,10 @@ test('origins: the development default accepts localhost and private addresses o
   const listed = createOriginCheck(['https://site.example.com']);
   assert.equal(listed('https://site.example.com'), true);
   assert.equal(listed('http://localhost:5173'), false);
+});
+
+test('spots: a short list of distinct, in-range numbers', () => {
+  assert.deepEqual(sanitizeSpots('4, 17,2,4,99,x,-1,3.5', 30), [4, 17, 2]);
+  assert.deepEqual(sanitizeSpots(undefined, 30), []);
+  assert.deepEqual(sanitizeSpots('1,'.repeat(300), 30), []);
 });

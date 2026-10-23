@@ -5,7 +5,10 @@ const KEY_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const KEY_LENGTH = 8;
 const EMPTY_ROOM_TTL_MS = 60_000;
 const MAX_CURTAINS_PER_ROOM = 500; // bounds memory if a client sends junk ids
-export const MAX_MEMORIES_PER_ROOM = 12; // wall spots set aside for them (client/src/gallery/memorySlots.js)
+// Wall spots a photo can hang on: every painting's curtain (a photo there takes the painting's place) and the spare
+// spots set aside for more. Keep equal to MEMORY_SPOTS in client/src/gallery/memorySlots.js.
+export const MEMORY_SPOTS = 30;
+export const MAX_MEMORIES_PER_ROOM = MEMORY_SPOTS;
 const MAX_MEMORY_BYTES_TOTAL = 256 * 1024 * 1024; // across every room on this server
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
@@ -53,7 +56,7 @@ export function createRoomStore({ ttlMs = EMPTY_ROOM_TTL_MS } = {}) {
     rooms.delete(roomId);
   }
 
-  const meta = ({ id, index, caption, date, type }) => ({ id, index, caption, date, type });
+  const meta = ({ id, spot, caption, date, type }) => ({ id, spot, caption, date, type });
   const roleFor = (room, token) =>
     typeof token === 'string' ? ['host', 'guest'].find((r) => room.slots[r].token && safeEqual(room.slots[r].token, token)) : undefined;
 
@@ -67,7 +70,7 @@ export function createRoomStore({ ttlMs = EMPTY_ROOM_TTL_MS } = {}) {
         keyHash: sha256(key),
         slots: { host: newSlot(), guest: newSlot() },
         curtains: new Map(), // painting id -> true (held open) | false (held closed)
-        memories: new Map(), // id -> { id, index, caption, date, type, bytes: Buffer }
+        memories: new Map(), // id -> { id, spot, caption, date, type, bytes: Buffer }
         uploads: [], // timestamps of recent uploads, for the rate limit
         cleanupTimer: null,
       };
@@ -170,10 +173,11 @@ export function createRoomStore({ ttlMs = EMPTY_ROOM_TTL_MS } = {}) {
     },
 
     /**
-     * Adds a photo to a room, for whoever holds one of its two tokens. It takes the lowest free spot.
+     * Adds a photo to a room, for whoever holds one of its two tokens. It hangs on the first free spot in `prefer`
+     * (the client lists them nearest first, so it lands on the curtain the player is standing at), else the lowest free one.
      * Returns { memory, sockets } (both players' sockets, to announce it), or { error }.
      */
-    addMemory(roomId, token, { caption, date, type, bytes }, now = Date.now()) {
+    addMemory(roomId, token, { caption, date, type, bytes, prefer = [] }, now = Date.now()) {
       const room = rooms.get(roomId);
       if (!room || !roleFor(room, token)) return { error: 'unauthorized' };
       room.uploads = room.uploads.filter((t) => now - t < 60_000);
@@ -181,10 +185,13 @@ export function createRoomStore({ ttlMs = EMPTY_ROOM_TTL_MS } = {}) {
       if (room.memories.size >= MAX_MEMORIES_PER_ROOM) return { error: 'room_full' };
       if (memoryBytes + bytes.length > MAX_MEMORY_BYTES_TOTAL) return { error: 'server_full' };
 
-      const taken = new Set([...room.memories.values()].map((m) => m.index));
-      let index = 0;
-      while (taken.has(index)) index += 1;
-      const memory = { id: randomBytes(16).toString('base64url'), index, caption, date, type, bytes };
+      const taken = new Set([...room.memories.values()].map((m) => m.spot));
+      let spot = prefer.find((n) => !taken.has(n));
+      if (spot === undefined) {
+        spot = 0;
+        while (taken.has(spot)) spot += 1;
+      }
+      const memory = { id: randomBytes(16).toString('base64url'), spot, caption, date, type, bytes };
       room.memories.set(memory.id, memory);
       room.uploads.push(now);
       memoryBytes += bytes.length;

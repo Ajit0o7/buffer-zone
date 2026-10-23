@@ -129,11 +129,11 @@ function PartnerTracker() {
 export default function PhotoFrames({ photos = PHOTOS }) {
   const roomId = useSession((s) => s.roomId);
   const memories = useMemories((s) => s.list);
+  // A photo hung on a painting's spot takes the painting's place.
+  const covered = new Set(memories.map((m) => m.spot));
   return (
     <GalleryBatch count={GALLERY_CAPACITY}>
-      {photos.map((photo, i) => (
-        <CurtainPhotoFrame key={photo.id} photo={photo} index={i} />
-      ))}
+      {photos.map((photo, i) => (covered.has(i) ? null : <CurtainPhotoFrame key={photo.id} photo={photo} index={i} />))}
       {memories.map((memory) => {
         const photo = memoryAsPhoto(memory, memoryUrl(roomId, memory.id));
         return <CurtainPhotoFrame key={photo.id} photo={photo} index={photo.slot} />;
