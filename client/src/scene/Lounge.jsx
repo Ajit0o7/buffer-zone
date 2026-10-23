@@ -44,9 +44,11 @@ import { marbleTexture, rugTexture } from './lounge/textures';
 const SOFA = { x: -15.99, z: -0.45, yaw: Math.PI / 2, width: 2.2, depth: 0.92 };
 const CHAIR = { width: 0.98, depth: 0.86 };
 const TURN = 0.12; // the armchairs face each other across the table, turned this far toward the sofa
+// Every gap a player can walk into is at least 1.1 m wide (a player is 0.7 m across), so nobody gets wedged: the
+// sofa's front to the table is 0.95 m, the sofa's ends to the armchairs more than 1.2 m.
 const CHAIRS = [
-  { id: 'north', x: -14.3, z: 0.75, yaw: Math.PI + TURN },
-  { id: 'south', x: -14.3, z: -1.65, yaw: -TURN },
+  { id: 'north', x: -13.55, z: 0.75, yaw: Math.PI + TURN },
+  { id: 'south', x: -13.55, z: -1.65, yaw: -TURN },
 ];
 const TABLE = { x: -14.3, z: -0.45 };
 const SIDE_TABLES = [
