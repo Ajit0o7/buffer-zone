@@ -1,3 +1,4 @@
+import { Vector3 } from 'three';
 // Central tuning constants. Keep asset URLs here so swapping a model never touches gameplay code.
 
 /**
@@ -36,6 +37,20 @@ export const CLIP_REFERENCE_SPEED = { walk: 1.8, run: 5.0 };
 // Left empty, the game synthesizes its footsteps (audio/footstepSynth.js). With recordings listed, they
 // are used instead, one picked at random per step. Put the files in client/public/audio/footsteps/.
 export const FOOTSTEP_SAMPLES = { stone: [], carpet: [] };
+
+// Golden hour. The sun sits low in the west, 33° up, so its light comes in through the courtyard's open
+// roof at a long slant (the light shafts follow it), in honey gold; the sky (scene/Sky.jsx) is drawn around it.
+const sunElevation = (33 * Math.PI) / 180;
+const sunAzimuth = (186 * Math.PI) / 180; // from +x, turning toward -z: down the courtyard's length from the west, a touch south
+export const SUN = {
+  direction: new Vector3(
+    Math.cos(sunElevation) * Math.cos(sunAzimuth),
+    Math.sin(sunElevation),
+    -Math.cos(sunElevation) * Math.sin(sunAzimuth),
+  ).normalize(), // from the scene toward the sun
+  color: '#ffc488',
+  intensity: 2.4,
+};
 
 // Interior HDRI for image-based lighting (CC0, Poly Haven). Set to null for the procedural fallback.
 export const HDRI_URL = '/hdri/venice_sunset_1k.hdr';

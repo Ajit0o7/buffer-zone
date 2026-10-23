@@ -58,7 +58,7 @@ function SpotlightPool() {
       light.position.copy(position).addScaledVector(normal, 2.2);
       light.position.y += 1.8;
       targets.current[k].position.copy(position);
-      light.intensity = 45 * gallery.open[i];
+      light.intensity = 30 * gallery.open[i]; // with the print's own glow, enough to lift it without washing it out
     }
   });
 

@@ -12,13 +12,12 @@ import {
   ToneMapping,
 } from '@react-three/postprocessing';
 import { LUTCubeLoader, ToneMappingMode } from 'postprocessing';
-import { Vector3 } from 'three';
 import { usePerf } from '../state/perf';
 import { localMotion } from '../world/shared';
 import { couple, useCouple } from '../world/couple';
-import { LUT_URL } from '../world/config';
+import { LUT_URL, SUN } from '../world/config';
+import Sky from './Sky';
 
-const SUN_DIRECTION = new Vector3(8, 14, 6).normalize();
 const SUN_DISTANCE = 30;
 const SHADOW_EXTENT = 12; // half-size of the shadow box around the player, in metres
 
@@ -38,15 +37,15 @@ function FollowSun() {
 
   useFrame(() => {
     target.current.position.copy(localMotion.position);
-    light.current.position.copy(localMotion.position).addScaledVector(SUN_DIRECTION, SUN_DISTANCE);
+    light.current.position.copy(localMotion.position).addScaledVector(SUN.direction, SUN_DISTANCE);
   });
 
   return (
     <>
       <directionalLight
         ref={light}
-        intensity={1.6}
-        color="#cfe0ff"
+        intensity={SUN.intensity}
+        color={SUN.color}
         castShadow
         shadow-mapSize={[1024, 1024]}
         shadow-camera-left={-SHADOW_EXTENT}
@@ -94,7 +93,7 @@ function Post({ tier }) {
   return (
     <EffectComposer multisampling={0} enableNormalPass={cinematic}>
       {cinematic && <SSAO samples={16} radius={0.12} intensity={18} luminanceInfluence={0.5} />}
-      <Bloom intensity={0.3} luminanceThreshold={0.88} luminanceSmoothing={0.2} mipmapBlur />
+      <Bloom intensity={0.55} luminanceThreshold={0.82} luminanceSmoothing={0.25} radius={0.75} mipmapBlur />
       {photo ? portrait : cinematic && <DepthOfField focusDistance={0.02} focalLength={0.006} bokehScale={1} />}
       <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
       <HueSaturation saturation={0.06} />
@@ -126,6 +125,9 @@ export default function Lighting({ hdri = null }) {
           <Lightformer form="rect" intensity={0.8} color="#fff4e6" position={[0, 8, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[12, 12, 1]} />
         </Environment>
       )}
+      <Sky />
+      {/* Warm bounce: blush from the sky, a deep amber from the floor, so shadows are never cold grey. */}
+      <hemisphereLight args={['#ffd6bf', '#4a2c1e', 0.35]} />
       <FollowSun />
       <Post tier={tier} />
     </>

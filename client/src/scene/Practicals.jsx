@@ -209,7 +209,7 @@ export default function Practicals({ stoneMap = null }) {
     for (const item of layout.items) {
       item.visible = isVisible(item.sightId);
       item.distance = item.position.distanceTo(player);
-      if (item.visible && item.distance < SELECT_RADIUS) ranked.push(item);
+      if (item.visible && item.distance < (item.reach ? item.reach + 3 : SELECT_RADIUS)) ranked.push(item);
     }
     ranked.sort((a, b) => a.distance - b.distance);
     for (const item of layout.items) {
@@ -232,6 +232,7 @@ export default function Practicals({ stoneMap = null }) {
       }
       light.position.copy(item.position);
       light.color.copy(item.base);
+      light.distance = item.reach ?? LIGHT_DISTANCE; // the chandeliers reach further than lamps
       light.intensity = item.intensity * item.level * (1 + 0.25 * (item.flicker ?? 0) * flicker(t, item.phase));
     }
 

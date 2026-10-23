@@ -363,6 +363,14 @@ export default function LocalPlayer({ avatarId }) {
       lookAt.set(x, y + CAMERA.lookHeight, z);
     }
 
+    // Development only: tests can place the camera anywhere ({ p: [x, y, z], t: [x, y, z] }).
+    if (import.meta.env.DEV && window.__cam) {
+      camGoal.fromArray(window.__cam.p);
+      lookAt.fromArray(window.__cam.t);
+      camera.position.copy(camGoal);
+      camera.lookAt(lookAt);
+    }
+
     // Camera occlusion: cast from the look point toward the camera, and pull in if a wall is in the way.
     toCamera.subVectors(camGoal, lookAt);
     const distance = toCamera.length();

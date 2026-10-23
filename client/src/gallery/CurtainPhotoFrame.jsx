@@ -35,7 +35,7 @@ const BLANK = new DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, RGBAFo
 BLANK.colorSpace = SRGBColorSpace;
 BLANK.needsUpdate = true;
 
-const PHOTO_GLOW = 0.5; // how much of a photo's brightness is its own light
+const PHOTO_GLOW = 0.28; // how much of a photo's brightness is its own light
 const SNAP_PROBE = 0.8; // the wall probe starts this far in front of the configured anchor
 const SNAP_REACH = 3.5; // and searches this far behind it
 const SNAP_GAP = 0.02; // gap left between the wall and the back of the frame
@@ -212,6 +212,7 @@ export default function CurtainPhotoFrame({ photo, index }) {
     Object.assign(st, { placed: false, snapped: false, snapTries: 0, near: false, wantOpen: false, open: 0, fade: 0 });
     gallery.hitboxes[index] = hitbox.current;
     gallery.toggles[index] = toggle;
+    gallery.setPlaque(index, photo.caption, photo.date);
     return () => {
       gallery.hitboxes[index] = null;
       gallery.toggles[index] = null;

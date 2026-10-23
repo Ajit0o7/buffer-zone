@@ -27,6 +27,11 @@ function DevHooks() {
   return null;
 }
 
+// New set pieces, picked up as soon as their files exist (each module's default export, mounted inside <Physics>).
+const SET_PIECES = Object.values(import.meta.glob(['./Lounge.jsx', './Greenery.jsx', './Fountain.jsx'], { eager: true }))
+  .map((m) => m.default)
+  .filter(Boolean);
+
 // The house is code-split: the lobby never downloads the 3D engine or the mansion.
 const Mansion = lazy(() => import('./Mansion'));
 
@@ -67,6 +72,9 @@ export default function GameScene() {
           <PhotoCapture />
           <Physics gravity={[0, -9.81, 0]}>
             <Mansion />
+            {SET_PIECES.map((Piece) => (
+              <Piece key={Piece.name} />
+            ))}
             <LocalPlayer avatarId={localAvatar} />
             <RemotePlayer avatarId={remoteAvatar} />
             {/* Inside Physics: each frame snaps itself onto the nearest wall with a physics ray. */}

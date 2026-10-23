@@ -7,6 +7,10 @@ import { DRACO_PATH, withKTX2 } from './loaders';
 import { LIGHTMAP_URL, MANSION_SCALE } from '../world/config';
 import GrandStair from './GrandStair';
 import Benches from './Benches';
+import MarbleFloor from './MarbleFloor';
+import Canopy from './Canopy';
+import LightShafts from './LightShafts';
+import HearthFX from './HearthFX';
 import Practicals from './Practicals';
 
 const MANSION_URL = '/models/mansion.glb';
@@ -76,10 +80,15 @@ export default function Mansion() {
       </RigidBody>
       {/* The way up to the Upper Sunset Balcony: the shell has no stair of its own. */}
       <GrandStair stoneMap={floorMap} />
+      {/* Polished marble over the courtyard floor; the glass roof, chandeliers and fairy lights above it. */}
+      <MarbleFloor />
+      <Canopy />
+      <LightShafts />
       {/* Stone benches to sit on, in the nave and on the east bridge. */}
       <Benches stoneMap={floorMap} />
       {/* The rooms' hearth, lamps, candles and lanterns, and the pooled lights that make them glow. */}
       <Practicals stoneMap={floorMap} />
+      <HearthFX />
     </>
   );
 }

@@ -1,5 +1,6 @@
 import { Vector3 } from 'three';
 import { MANSION_SCALE } from './config';
+import { CHANDELIERS } from './canopy';
 
 // The mansion's rooms. Coordinates are written at the house's authored scale (Sponza: x -11.4..10.4,
 // z -5.2..5.2, ground floor at y = 0, upper floor at y = 3.33) and multiplied by MANSION_SCALE, so they
@@ -51,6 +52,17 @@ export const PRACTICALS = [
   practical('bridge-lanterns', 'balcony', 'lanterns', [9.1, 4.27, -0.2], { color: '#ffb35c', intensity: 16, flicker: 0.15 }),
   practical('balcony-north', 'balcony', 'lamp', [0.667, 4.46, 4.2], { color: '#ffcf8f', intensity: 14 }),
   practical('balcony-south', 'balcony', 'lamp', [0.667, 4.46, -4.733], { color: '#ffcf8f', intensity: 14 }),
+  // The chandeliers over the courtyard (drawn by scene/Canopy.jsx): high up, so their light reaches further.
+  ...CHANDELIERS.map((c, i) => ({
+    id: `chandelier-${i}`,
+    room: 'atrium',
+    kind: 'chandelier',
+    position: new Vector3(c.x, c.y - 0.2, c.z),
+    color: '#ffc78a',
+    intensity: 120,
+    reach: 18,
+    flicker: 0.12,
+  })),
 ];
 
 const inside = (p, r) =>
