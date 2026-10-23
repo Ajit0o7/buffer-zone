@@ -41,8 +41,9 @@ const httpServer = http.createServer(async (req, res) => {
 const io = new Server(httpServer, {
   cors: { origin: (origin, callback) => callback(null, !origin || originAllowed(origin)) },
   maxHttpBufferSize: 16 * 1024,
+  // Heartbeat. A very slow machine (software rendering) can stall a tab for seconds; raise PING_TIMEOUT_MS if players drop out.
   pingInterval: 10_000,
-  pingTimeout: 5_000,
+  pingTimeout: Number(process.env.PING_TIMEOUT_MS) || 5_000,
 });
 
 const failedJoins = new Map();

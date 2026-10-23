@@ -119,7 +119,7 @@ export default function LocalPlayer({ avatarId }) {
       if (yaw !== undefined) cameraYaw.current = yaw;
     };
     window.__localMotion = localMotion;
-    window.__couple = { couple, store: useCouple, sit, partner, seats: SEATS, sitFits };
+    window.__couple = { couple, store: useCouple, sit, partner, seats: SEATS, sitFits, session: useSession };
     return () => {
       delete window.__teleport;
       delete window.__localMotion;

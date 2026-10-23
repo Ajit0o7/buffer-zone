@@ -81,7 +81,7 @@ function Post({ tier }) {
   // Photo mode adds depth of field in any tier, focused on the midpoint of the two of you: it is the one moment
   // the extra pass is worth it, and it costs nothing the rest of the time (the effect isn't mounted).
   const photo = useCouple((s) => s.photoMode);
-  const portrait = <DepthOfField target={couple.photo.focus} focusRange={0.012} focalLength={0.05} bokehScale={5} resolutionScale={0.5} />;
+  const portrait = <DepthOfField target={couple.photo.focus} focusRange={0.03} focalLength={0.03} bokehScale={2} resolutionScale={1} />;
   if (tier === 'low') {
     return (
       <EffectComposer multisampling={0}>

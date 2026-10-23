@@ -35,6 +35,7 @@ const BLANK = new DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, RGBAFo
 BLANK.colorSpace = SRGBColorSpace;
 BLANK.needsUpdate = true;
 
+const PHOTO_GLOW = 0.5; // how much of a photo's brightness is its own light
 const SNAP_PROBE = 0.8; // the wall probe starts this far in front of the configured anchor
 const SNAP_REACH = 3.5; // and searches this far behind it
 const SNAP_GAP = 0.02; // gap left between the wall and the back of the frame
@@ -112,7 +113,19 @@ export default function CurtainPhotoFrame({ photo, index }) {
   const hitbox = useRef();
 
   const material = useMemo(
-    () => new MeshStandardMaterial({ map: BLANK, roughness: 0.55, metalness: 0, transparent: true, opacity: 0 }),
+    () => // A print, not a mirror: matte, with a share of its own light (the emissive map is the photo again) so it reads
+    // clearly from across the room whatever the lamps and the sky are doing, instead of dull and patchy.
+    new MeshStandardMaterial({
+      map: BLANK,
+      emissive: 0xffffff,
+      emissiveMap: BLANK,
+      emissiveIntensity: PHOTO_GLOW,
+      roughness: 0.92,
+      metalness: 0,
+      envMapIntensity: 0.3,
+      transparent: true,
+      opacity: 0,
+    }),
     [],
   );
 
@@ -174,7 +187,7 @@ export default function CurtainPhotoFrame({ photo, index }) {
           return;
         }
         fitCover(texture);
-        material.map = texture;
+        material.map = material.emissiveMap = texture;
         st.tex = 'ready';
       },
       (err) => {
@@ -186,7 +199,7 @@ export default function CurtainPhotoFrame({ photo, index }) {
   };
 
   const unloadPhoto = () => {
-    material.map = BLANK;
+    material.map = material.emissiveMap = BLANK;
     st.tex = 'idle';
     st.fade = 0;
     releaseTexture(photo.src);
@@ -205,7 +218,7 @@ export default function CurtainPhotoFrame({ photo, index }) {
       gallery.clear(index);
       if (st.tex === 'ready') {
         releaseTexture(photo.src);
-        material.map = BLANK;
+        material.map = material.emissiveMap = BLANK;
       }
       st.tex = 'idle';
       st.loadToken += 1; // a fetch still in flight releases itself when it lands

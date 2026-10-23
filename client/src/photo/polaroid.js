@@ -7,7 +7,7 @@ const FOOT = 0.2; // the bottom border
 /** `source` is the game's canvas; `caption` is two short lines. Returns a new canvas. */
 export function makePolaroid(source, caption = {}) {
   const side = Math.min(source.width, source.height);
-  const shot = Math.min(side, 1600);
+  const shot = Math.min(side, 2400);
   const border = Math.round(shot * BORDER);
   const foot = Math.round(shot * FOOT);
   const out = document.createElement('canvas');

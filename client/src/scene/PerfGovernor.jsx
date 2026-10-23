@@ -3,8 +3,9 @@ import { PerformanceMonitor } from '@react-three/drei';
 import { usePerf } from '../state/perf';
 
 const TARGET_FPS = 90;
-const MIN_DPR = 1;
-const MAX_DPR = 1.5;
+// Sharp on a high-density screen (a retina laptop is 2): never drop below 1.25, and go up to the screen's own density, 2 at most.
+const MIN_DPR = Math.min(1.25, window.devicePixelRatio || 1);
+const MAX_DPR = Math.min(2, Math.max(1.5, window.devicePixelRatio || 1));
 
 /**
  * Holds the frame rate at the target by trading resolution first, then post-processing.

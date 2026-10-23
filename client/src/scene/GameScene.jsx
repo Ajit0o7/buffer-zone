@@ -31,7 +31,7 @@ function DevHooks() {
 const Mansion = lazy(() => import('./Mansion'));
 
 // Canvas hygiene for 90+ fps:
-// - dpr capped at 1.5: post-processing and fill cost scale with pixel count (PerfGovernor lowers it further).
+// - dpr capped at 2 (the screen's own density, up to that): post-processing and fill cost scale with pixel count (PerfGovernor lowers it further).
 // - no MSAA and no stencil buffer: neither is used, and both cost memory bandwidth on every frame.
 // - toneMapping off on the renderer: the post chain tone-maps once, at the end.
 const GL = {
@@ -51,7 +51,7 @@ export default function GameScene() {
     <>
       <Canvas
         shadows
-        dpr={[1, 1.5]}
+        dpr={[1.25, Math.min(2, Math.max(1.5, window.devicePixelRatio || 1))]}
         gl={GL}
         camera={{ fov: CAMERA.fov, near: CAMERA.near, far: CAMERA.far, position: [0, 3, 8] }}
       >
