@@ -120,12 +120,14 @@ export default function LocalPlayer({ avatarId }) {
     };
     window.__localMotion = localMotion;
     window.__couple = { couple, store: useCouple, sit, partner, seats: SEATS, sitFits, session: useSession };
+    window.__physics = { world, rapier };
     return () => {
       delete window.__teleport;
       delete window.__localMotion;
       delete window.__couple;
+      delete window.__physics;
     };
-  }, [sit]);
+  }, [sit, world, rapier]);
 
   // Pointer-lock mouse look. Only active once the canvas has been clicked.
   useEffect(() => {
