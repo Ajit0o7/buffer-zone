@@ -176,10 +176,11 @@ def polar_profile(points, centre, z, band, segments, scale=1.0, pad=0.0, convex=
 
 # ---- garments --------------------------------------------------------------------------------
 
-def lower_panel(body, bones, z_top, z_hem, flare=0.07, segments=72, rows=14, slit_from=None):
+def lower_panel(body, bones, z_top, z_hem, flare=0.07, segments=72, rows=14, slit_from=None, pleats=None, to_ankle=False):
     """The skirt of a daura or kurtha: a tube from just under the waist to the knees, snug at the top
     and flaring at the hem, skinned so each side follows its thigh. With slit_from (a height), the
-    sides are split from there down, as on a kurtha.
+    sides are split from there down, as on a kurtha. With pleats=(count, depth), folds are gathered at
+    the front, as on a sari. With to_ankle, the lower part follows the shins as well as the thighs.
 
     body:  bind-pose vertex positions of the body (to fit the top ring and clear the thighs)
     bones: name -> bind-pose position
@@ -212,6 +213,7 @@ def lower_panel(body, bones, z_top, z_hem, flare=0.07, segments=72, rows=14, sli
                 seq.append(k)  # duplicate: the slit edge
                 split_cols.append(len(seq) - 1)
         order = seq
+    order = order + [order[0]]  # a closing column with its own texture coordinate, so there's no seam stripe
     for r in range(rows):
         t = r / (rows - 1)
         ease = t ** 1.4
@@ -225,19 +227,26 @@ def lower_panel(body, bones, z_top, z_hem, flare=0.07, segments=72, rows=14, sli
             reach = min(1.0, t * 2.5)  # eases out to the thighs' outline over the first part of the drop
             rad = max(top[k] + (hem[k] - top[k]) * ease, top[k] + (envelope[k] - top[k]) * reach, local[k])
             rad *= 1 + 0.025 * t * math.sin(a * 11 + 0.7)  # soft folds
+            if pleats:
+                count, depth = pleats
+                front = math.exp(-((a + math.pi / 2) / 0.45) ** 2)  # -Y is the front
+                rad += depth * front * (0.4 + 0.6 * t) * math.sin((a + math.pi / 2) * count)
             x = centre[0] + math.cos(a) * rad
             y = centre[1] + math.sin(a) * rad
             positions.append((x, y, z))
             uvs.append((c / (len(order) - 1) * 4.0, t))
             # Skinning: the hips at the top, the thigh on the same side toward the hem.
-            leg = 0.9 * t ** 1.2
+            leg = (0.95 * t ** 1.1) if to_ankle else (0.9 * t ** 1.2)
             side = np.clip(x / 0.12, -1, 1)
-            weights.append({'Hips': 1 - leg, 'LeftUpLeg': leg * (0.5 + 0.5 * side), 'RightUpLeg': leg * (0.5 - 0.5 * side)})
+            calf = 0.85 * float(np.clip((t - 0.35) / 0.65, 0, 1)) if to_ankle else 0.0  # the shins carry the hem
+            left, right = 0.5 + 0.5 * side, 0.5 - 0.5 * side
+            weights.append({'Hips': 1 - leg, 'LeftUpLeg': leg * left * (1 - calf), 'RightUpLeg': leg * right * (1 - calf),
+                            'LeftLeg': leg * left * calf, 'RightLeg': leg * right * calf})
     n_cols = len(order)
     for r in range(rows - 1):
         z_mid = z_top + (z_hem - z_top) * (r + 0.5) / (rows - 1)
-        for c in range(n_cols):
-            c1 = (c + 1) % n_cols
+        for c in range(n_cols - 1):
+            c1 = c + 1
             if slit_from is not None and z_mid < slit_from and c in split_cols:
                 continue  # leave the slit open
             a, b, d, e = r * n_cols + c, r * n_cols + c1, (r + 1) * n_cols + c, (r + 1) * n_cols + c1
@@ -316,12 +325,38 @@ def press_hair(points, fit):
     return out
 
 
+SURFACE = {}  # 'triangles': the body's triangle corners (n, 3, 3), set by the build for exact ray casts
+
+
 def surface_offset(body, x, z, front=True, offset=0.02, radius=0.03):
-    """y of the body surface at (x, z), front (-y) or back, pushed out by `offset`."""
-    d = np.hypot(body[:, 0] - x, body[:, 2] - z)
-    near = body[d < radius]
+    """y of the body surface at (x, z), seen from the front (-y) or the back (+y), pushed out by
+    `offset`. Casts a ray through the body's triangles when they're known; otherwise uses the
+    nearest vertices on that side."""
+    tris = SURFACE.get('triangles')
+    if tris is not None:
+        # Moller-Trumbore against every triangle, ray along +y from far in front (or -y from behind).
+        d = np.array([0.0, 1.0 if front else -1.0, 0.0])
+        o = np.array([x, -2.0 if front else 2.0, z])
+        v0, e1, e2 = tris[:, 0], tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0]
+        pv = np.cross(d, e2)
+        det = np.einsum('ij,ij->i', e1, pv)
+        ok = np.abs(det) > 1e-12
+        inv = np.where(ok, 1 / np.where(ok, det, 1), 0)
+        tv = o - v0
+        u = np.einsum('ij,ij->i', tv, pv) * inv
+        qv = np.cross(tv, e1)
+        v = (qv @ d) * inv
+        t = np.einsum('ij,ij->i', e2, qv) * inv
+        hit = ok & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 0)
+        if hit.any():
+            y = o[1] + d[1] * t[hit].min()
+            return y - offset if front else y + offset
+    side = body[:, 1] < np.median(body[:, 1]) if front else body[:, 1] >= np.median(body[:, 1])
+    pts = body[side]
+    dist = np.hypot(pts[:, 0] - x, pts[:, 2] - z)
+    near = pts[dist < radius]
     if len(near) == 0:
-        near = body[np.argsort(d)[:8]]
+        near = pts[np.argsort(dist)[:6]]
     return near[:, 1].min() - offset if front else near[:, 1].max() + offset
 
 
@@ -397,6 +432,90 @@ def dupatta(body, bones, width=0.105, gap=0.012):
     tris = grid_triangles(len(c), 7)
     return {'positions': positions, 'normals': vertex_normals(positions, tris), 'uvs': np.asarray(uvs, np.float32),
             'triangles': tris, 'weights': weights}
+
+
+def pallu(body, bones, gap=0.014):
+    """The pallu of a sari: from the waist on the right, diagonally up across the chest, over the left
+    shoulder, and hanging down the back to the knees, widening as it falls. UV u runs along its length
+    (0 at the waist, 1 at the free end), v across it."""
+    lx = bones['LeftArm'][0] * 0.66
+    near = body[(np.abs(body[:, 0] - lx) < 0.03) & (np.abs(body[:, 1] - bones['LeftArm'][1]) < 0.06) & (body[:, 2] < bones['Head'][2])]
+    top = near[:, 2].max() + gap
+    waist = bones['Hips'][2] + 0.05
+    end_z = bones['LeftLeg'][2] + 0.06
+
+    pts, normals, joints, widths = [], [], [], []
+
+    def add(p, n, w, width):
+        pts.append(np.asarray(p, np.float32))
+        normals.append(np.asarray(n, np.float32))
+        joints.append(w)
+        widths.append(width)
+
+    # Across the front: from the right hip up to the left shoulder.
+    for u in np.linspace(0, 1, 26):
+        x = -0.13 + (lx + 0.13) * u
+        z = waist + (top - 0.06 - waist) * u
+        k = float(u)
+        add((x, surface_offset(body, x, z, True, gap), z), (0, -1, 0),
+            {'Hips': 0.6 * (1 - k), 'Spine1': 0.4, 'Spine2': 0.6 * k}, 0.24 + 0.04 * u)
+    # Over the shoulder.
+    yf = surface_offset(body, lx, top - 0.06, True, gap)
+    yb = surface_offset(body, lx, top - 0.06, False, gap)
+    for u in np.linspace(0, 1, 9)[1:-1]:
+        a = math.pi * u
+        add((lx, yf + (yb - yf) * u, top - 0.06 + 0.06 * math.sin(a)), (0, -math.cos(a), math.sin(a)),
+            {'LeftShoulder': 0.5, 'Spine2': 0.5}, 0.28)
+    # Down the back, widening.
+    for u in np.linspace(0, 1, 24):
+        z = top - 0.06 - (top - 0.06 - end_z) * u
+        x = lx - 0.06 * u
+        h = float(np.clip((z - bones['Hips'][2]) / (top - bones['Hips'][2]), 0, 1))
+        y = surface_offset(body, x, max(z, bones['Hips'][2] - 0.1), False, gap + 0.02 * u)
+        add((x, y, z), (0, 1, 0), {'Spine2': 0.6 * h, 'Spine1': 0.4 * h + 0.2 * (1 - h), 'Hips': 0.8 * (1 - h)}, 0.28 + 0.12 * u)
+
+    c = np.asarray(pts)
+    n = np.asarray(normals)
+    for _ in range(3):
+        c[1:-1] = (c[:-2] + 2 * c[1:-1] + c[2:]) / 4
+        n[1:-1] = (n[:-2] + 2 * n[1:-1] + n[2:]) / 4
+    length = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(c, axis=0), axis=1))])
+    positions, uvs, weights = [], [], []
+    cols = 9
+    for i, p in enumerate(c):
+        tangent = c[min(i + 1, len(c) - 1)] - c[max(i - 1, 0)]
+        tangent /= np.linalg.norm(tangent) + 1e-9
+        normal = n[i] / (np.linalg.norm(n[i]) + 1e-9)
+        across = np.cross(tangent, normal)
+        across /= np.linalg.norm(across) + 1e-9
+        for v in np.linspace(-0.5, 0.5, cols):
+            fold = 0.01 * math.sin(v * 7 * math.pi) * (0.5 + 0.5 * length[i] / length[-1])
+            positions.append(p + across * widths[i] * v + normal * fold)
+            uvs.append((length[i] / length[-1], v + 0.5))
+            weights.append(joints[i])
+    positions = np.asarray(positions, np.float32)
+    tris = grid_triangles(len(c), cols)
+    return {'positions': positions, 'normals': vertex_normals(positions, tris), 'uvs': np.asarray(uvs, np.float32),
+            'triangles': tris, 'weights': weights}
+
+
+def transfer_weights(points, body_points, body_joints, body_weights, joint_names, k=4):
+    """Skin weights for a close-fitting garment, copied from the nearest body vertices (inverse-distance
+    blend of k), so it moves exactly like the skin beneath it in every pose."""
+    out = []
+    for p in points:
+        d = np.linalg.norm(body_points - p, axis=1)
+        idx = np.argpartition(d, k)[:k]
+        w = 1 / np.maximum(d[idx], 1e-4) ** 2
+        w /= w.sum()
+        acc = {}
+        for i, wi in zip(idx, w):
+            for j, x in zip(body_joints[i], body_weights[i]):
+                if x > 0:
+                    name = joint_names[int(j)]
+                    acc[name] = acc.get(name, 0) + float(x * wi)
+        out.append(acc)
+    return out
 
 
 def skin_attributes(weights, joint_names):

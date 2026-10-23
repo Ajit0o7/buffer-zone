@@ -118,8 +118,9 @@ export default function Avatar({ id, motion, lookAt = null, footOffset = 0 }) {
     }
 
     // Play each clip at the rate that matches ground speed, so the feet don't slide.
-    if (actions.walk) actions.walk.timeScale = MathUtils.clamp(motion.speed / CLIP_REFERENCE_SPEED.walk, 0.6, 2.0);
-    if (actions.run) actions.run.timeScale = MathUtils.clamp(motion.speed / CLIP_REFERENCE_SPEED.run, 0.6, 1.7);
+    const ref = config.clipSpeed ?? CLIP_REFERENCE_SPEED;
+    if (actions.walk) actions.walk.timeScale = MathUtils.clamp(motion.speed / ref.walk, 0.6, 2.0);
+    if (actions.run) actions.run.timeScale = MathUtils.clamp(motion.speed / ref.run, 0.6, 1.7);
 
     // Phase lock: while walk and run blend, put run's gait at walk's point in its cycle, so the legs don't ghost.
     if (actions.walk && actions.run && w.walk > 0.01 && w.run > 0.01) {

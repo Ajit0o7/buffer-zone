@@ -1,22 +1,26 @@
 // Central tuning constants. Keep asset URLs here so swapping a model never touches gameplay code.
 
 /**
- * Avatars. Each one names its model and the file its locomotion clips come from.
+ * Avatars. Each one names its model, the file its idle/walk/run clips come from, and the ground speed
+ * each clip was captured at (playback rate = actual speed / this, so feet don't slide).
  *
  * The boy and the girl are realistic Microsoft Rocketbox characters (MIT licence) dressed in Nepali
- * clothes by scripts/dress-avatars.py: daura suruwal, waistcoat and Dhaka topi; kurtha surwal and
- * dupatta. Their bones are renamed to Mixamo's names at build time, so both play the same casual
- * motion-capture set (Mixamo's Xbot idle/walk/run), retargeted onto each rig at load time
- * (avatar/retarget.js corrects for the differing rest poses).
+ * clothes by scripts/dress-avatars.py: daura suruwal, waistcoat and Dhaka topi; a sari with a cholo.
+ * Their motion-capture clips (male and female idle, fast walk and run, from the same library and
+ * skeleton) are built into their own files, so they play as recorded, with nothing to download.
+ * A model with a different rig can name another file as clipSource: its clips are then retargeted
+ * by bone name (avatar/retarget.js).
  */
 export const AVATARS = {
   boy: {
     url: '/models/avatars/boy.glb', // host
-    clipSource: '/models/animations/locomotion.glb',
+    clipSource: '/models/avatars/boy.glb',
+    clipSpeed: { walk: 2.01, run: 5.86 }, // measured by scripts/dress-avatars.py
   },
   girl: {
     url: '/models/avatars/girl.glb', // guest
-    clipSource: '/models/animations/locomotion.glb',
+    clipSource: '/models/avatars/girl.glb',
+    clipSpeed: { walk: 1.92, run: 5.38 },
   },
 };
 // Clip names to look for in the clip source (first match wins, case-insensitive).
@@ -25,7 +29,7 @@ export const CLIP_NAMES = { idle: ['idle'], walk: ['walk'], run: ['run'] };
 // Heads turn toward the partner when they're this close, within this angle of straight ahead.
 export const HEAD_LOOK = { radius: 4.5, maxYaw: (70 * Math.PI) / 180, maxPitch: (25 * Math.PI) / 180, eyeHeight: 1.6 };
 
-// Ground speed each clip was captured at. Playback rate = actual speed / this, so feet don't slide.
+// Fallback capture speeds for avatars that don't give their own clipSpeed.
 export const CLIP_REFERENCE_SPEED = { walk: 1.8, run: 5.0 };
 
 // Interior HDRI for image-based lighting (CC0, Poly Haven). Set to null for the procedural fallback.
@@ -48,8 +52,9 @@ export const partnerRole = (role) => (role === 'host' ? 'guest' : 'host');
 export const CAPSULE = { radius: 0.35, halfHeight: 0.55, center: 0.9 }; // center = halfHeight + radius
 
 // Locomotion, tuned for the larger halls.
-export const WALK_SPEED = 3.5; // m/s
-export const RUN_SPEED = 8.0; // m/s
+// Human speeds, close to the clips' own, so legs move at their natural rate.
+export const WALK_SPEED = 2.2; // m/s, a brisk walk
+export const RUN_SPEED = 5.8; // m/s
 export const ACCELERATION = 10; // how fast ground speed reaches its target (1/s)
 export const DECELERATION = 14; // stops a little faster than it starts, so it doesn't feel floaty
 export const GRAVITY = 20; // m/s², a little above Earth's so drops feel weighted under a game camera

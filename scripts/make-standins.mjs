@@ -1,8 +1,7 @@
 // Generates placeholder ("stand-in") assets, so the scene runs before real files exist:
 //   default      one gradient photo per painting in client/src/gallery/photos.js, plus two audio clips
-//   --avatars    also a box-built clip file (idle/walk/run), and box-built avatars on the same rig for any
-//                avatar file that is missing (the real boy.glb and girl.glb are never overwritten);
-//                used by fetch-assets.mjs when the motion-capture clips can't be downloaded
+//   --avatars    also box-built avatars with their own idle/walk/run clips, for any avatar file that is
+//                missing (the real boy.glb and girl.glb are never overwritten)
 // Node built-ins only, so `npm run standins` works anywhere. Replace the files with real ones later;
 // the code keeps the same paths.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -411,12 +410,11 @@ out('audio/footstep.wav', wav(footstepSamples()));
 out('audio/romantic-theme.wav', wav(musicSamples()));
 
 if (WITH_AVATARS) {
-  // Same rig in all three files; config.js takes the clips from locomotion.glb.
+  // Each file carries its own clips, as the real avatars do.
   const avatar = (name, shirt, hair) => {
     if (existsSync(join(PUBLIC, `models/avatars/${name}.glb`))) return console.log(`kept models/avatars/${name}.glb`);
     out(`models/avatars/${name}.glb`, buildGLB({ roots: avatarRig(), materials: avatarMaterials(shirt, hair), animations: CLIPS }));
   };
   avatar('boy', [0.2, 0.35, 0.7], [0.18, 0.12, 0.08]);
   avatar('girl', [0.6, 0.15, 0.2], [0.1, 0.07, 0.05]);
-  out('models/animations/locomotion.glb', buildGLB({ roots: avatarRig(), materials: avatarMaterials([0.5, 0.5, 0.5], [0.3, 0.3, 0.3]), animations: CLIPS }));
 }

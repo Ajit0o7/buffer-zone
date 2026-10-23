@@ -33,8 +33,8 @@ from PIL import Image
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / 'avatar_tools'))
-from garments import (dhaka_pattern, dupatta, dhaka_topi, floral_print, lower_panel, plain_cloth,  # noqa: E402
-                      press_hair, skin_attributes, weave, blur)
+from garments import (dhaka_pattern, dupatta, dhaka_topi, floral_print, lower_panel, pallu, plain_cloth,  # noqa: E402
+                      press_hair, skin_attributes, transfer_weights, weave, blur, SURFACE)
 from glb import GLB  # noqa: E402
 from paint import dilate, luminance, position_map  # noqa: E402
 from rig import load_texture, rename_bones, skin_joint_names  # noqa: E402
@@ -46,9 +46,17 @@ ROCKETBOX = 'https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/094
 TEX = 2048  # body and head colour maps
 NORMAL_TEX = 1024
 
+# Motion-capture clips from the same library, recorded on the same Biped skeleton, so they play on
+# the avatars directly. (folder, file): 'static' clips stand in place; 'xy' clips travel, and the build
+# measures their speed from that travel, then removes it so they play in place.
+MOTION = {
+    'm': {'idle': ('static', 'm_idle_neutral_01'), 'walk': ('xy', 'm_walk_fast_02'), 'run': ('xy', 'm_run_fast_01')},
+    'f': {'idle': ('static', 'f_idle_neutral_01'), 'walk': ('xy', 'f_walk_fast_02'), 'run': ('xy', 'f_run_fast_01')},
+}
+
 AVATARS = {
-    'boy': {'source': 'Male_Adult_10', 'code': 'm024', 'outfit': 'daura'},
-    'girl': {'source': 'Female_Adult_01', 'code': 'f001', 'outfit': 'kurtha'},
+    'boy': {'source': 'Male_Adult_10', 'code': 'm024', 'outfit': 'daura', 'motion': 'm'},
+    'girl': {'source': 'Female_Adult_01', 'code': 'f001', 'outfit': 'sari', 'motion': 'f'},
 }
 
 # Colours (linear-ish 0..1 sRGB values; the textures are sRGB).
@@ -62,6 +70,9 @@ GOLD_TRIM = (0.88, 0.70, 0.30)
 SURWAL = (0.93, 0.86, 0.68)
 DUPATTA = (0.90, 0.52, 0.10)  # marigold
 HAIR = (0.045, 0.032, 0.026)
+SARI = (0.64, 0.04, 0.08)  # festive red silk
+SARI_MOTIF = (0.90, 0.72, 0.30)  # gold
+BLOUSE = (0.36, 0.03, 0.07)  # maroon cholo
 
 
 # ---- sources ---------------------------------------------------------------------------------
@@ -90,6 +101,57 @@ def fbx2gltf():
     if folder != 'Windows_NT':
         exe.chmod(0o755)
     return exe
+
+
+def motion_clip(folder, name):
+    """Downloads and converts one Rocketbox animation; returns the converted GLB's path."""
+    base = f'{ROCKETBOX}/Assets/Animations/all_animations_max_motextr_{folder}'
+    target = CACHE / 'animations' / f'{name}_{folder}'
+    fbx = fetch(f'{base}/{name}.max.fbx', target.with_suffix('.fbx'))
+    glb = target.with_suffix('.glb')
+    if not glb.exists():
+        subprocess.run([str(fbx2gltf()), '--binary', '--input', str(fbx), '--output', str(target)], check=True,
+                       stdout=subprocess.DEVNULL)
+    return glb
+
+
+def add_motion(g, set_name):
+    """Copies idle, walk and run into the avatar as glTF animations named after their state.
+    Every bone takes the clip's rotations; only the root (Bip01) takes translation, in place (its
+    horizontal travel removed) and scaled to the avatar's hip height, so the avatar keeps its own
+    proportions. Returns each clip's natural ground speed in m/s (0 for idle)."""
+    nodes = {n.get('name'): i for i, n in enumerate(g.json['nodes'])}
+    root_y = g.json['nodes'][nodes['Bip01']]['translation'][1]
+    speeds = {}
+    g.json.setdefault('animations', [])
+    for state, (folder, name) in MOTION[set_name].items():
+        src = GLB(motion_clip(folder, name))
+        rename_bones(src)
+        anim = src.json['animations'][0]
+        out = {'name': state, 'channels': [], 'samplers': []}
+        speeds[state] = 0.0
+        for ch in anim['channels']:
+            node_name = src.json['nodes'][ch['target']['node']].get('name')
+            path = ch['target']['path']
+            if node_name not in nodes or path == 'scale' or (path == 'translation' and node_name != 'Bip01'):
+                continue
+            sampler = anim['samplers'][ch['sampler']]
+            times = src.read(sampler['input']).astype(np.float32)
+            values = src.read(sampler['output']).astype(np.float32)
+            if path == 'translation':
+                if folder == 'xy':
+                    travel = np.linalg.norm(values[-1, [0, 2]] - values[0, [0, 2]])
+                    speeds[state] = float(travel / max(times[-1, 0], 1e-3))
+                src_y = src.json['nodes'][ch['target']['node']]['translation'][1]
+                values = values.copy()
+                values[:, 0] = 0
+                values[:, 2] = 0
+                values[:, 1] *= root_y / src_y
+            out['samplers'].append({'input': g.add_accessor(times), 'output': g.add_accessor(values),
+                                    'interpolation': sampler.get('interpolation', 'LINEAR')})
+            out['channels'].append({'sampler': len(out['samplers']) - 1, 'target': {'node': nodes[node_name], 'path': path}})
+        g.json['animations'].append(out)
+    return speeds
 
 
 def source_files(spec):
@@ -280,6 +342,36 @@ def dress_kurtha(rgb, pts, mask, labels, b):
     return kurtha | surwal
 
 
+def dress_sari(rgb, pts, mask, labels, b):
+    """Under the sari: a maroon cholo (blouse) with elbow-length sleeves and gold edging, and a little
+    bare midriff above the sari's waist. Returns (painted, flatten): flatten marks where the original
+    clothes' folds should be smoothed out of the normal map (the new bare skin and the hidden legs)."""
+    z = pts[..., 2]
+    bare = np.isin(labels, ['LeftForeArm', 'RightForeArm', 'LeftHand', 'RightHand', 'head', 'LeftUpperArm', 'RightUpperArm'])
+    bare |= (labels == 'torso') & (z > b['Spine2'][2] - 0.08)
+    skin = is_skin(rgb) & mask & bare
+    hands = np.isin(labels, ['LeftHand', 'RightHand'])
+    forearm_skin = skin & np.isin(labels, ['LeftForeArm', 'RightForeArm'])
+    skin_rgb = np.median(rgb[forearm_skin], axis=0) if forearm_skin.any() else np.array([0.85, 0.66, 0.56])
+
+    blouse_bottom = b['Spine2'][2] - 0.10  # just under the bust
+    sari_waist = b['Hips'][2] + 0.05
+    cloth = mask & ~skin & ~hands
+    arms = np.isin(labels, ['LeftUpperArm', 'RightUpperArm', 'LeftForeArm', 'RightForeArm'])
+    midriff = cloth & ~arms & (z < blouse_bottom) & (z > sari_waist - 0.03)
+    blouse = cloth & ~midriff & ((z >= blouse_bottom) | arms)
+    below = cloth & ~arms & (z <= sari_waist - 0.03)
+    shade = np.clip(smooth_shading(rgb, blouse, 2), 0.65, 1.15)
+    paint(rgb, blouse, BLOUSE, shade, weave(rgb.shape[0], 0.04))
+    new_skin = midriff
+    paint(rgb, new_skin, skin_rgb, np.clip(smooth_shading(rgb, new_skin, 8), 0.9, 1.06))
+    paint(rgb, below, SARI, np.clip(smooth_shading(rgb, below, 6), 0.8, 1.1))
+    # Gold edging where the blouse meets skin: neckline, sleeve hems, the hem above the midriff.
+    edge = blouse & (blur((skin | new_skin).astype(np.float32), 5) > 0.02)
+    paint(rgb, edge, GOLD_TRIM, np.clip(shade, 0.8, 1.2))
+    return blouse | new_skin | below, new_skin | below
+
+
 def darken_hair(rgb, region):
     lum = luminance(rgb)
     ref = np.median(lum[region]) if region.any() else 1
@@ -303,6 +395,7 @@ def build(key):
 
     body_prim = primitive(g, '_body')
     body_pos, body_uv, body_tris = geometry(g, body_prim)
+    SURFACE['triangles'] = body_pos[body_tris]  # exact surface for draping garments
     head_prim = primitive(g, '_head')
     head_pos = g.read(head_prim['attributes']['POSITION'])
     opacity_prim = primitive(g, '_opacity')
@@ -315,6 +408,8 @@ def build(key):
     if spec['outfit'] == 'daura':
         painted = dress_daura(body_rgb, pts, mask, labels, b)
         flatten = np.zeros_like(mask)
+    elif spec['outfit'] == 'sari':
+        painted, flatten = dress_sari(body_rgb, pts, mask, labels, b)
     else:
         painted = dress_kurtha(body_rgb, pts, mask, labels, b)
         # The jeans' normal map embosses pockets, belt loops and seams: smooth it out under the new clothes.
@@ -324,7 +419,7 @@ def build(key):
     # 2. Head and hair: darker hair for the girl (head texture and the hair cards).
     head_rgb = np.asarray(load_texture(tex['head_color'], TEX).convert('RGB'), np.float32) / 255
     opacity = load_texture(tex['opacity_color'], 1024).convert('RGBA')
-    paint_collar(head_rgb, g, head_prim, b, DAURA if spec['outfit'] == 'daura' else KURTHA)
+    paint_collar(head_rgb, g, head_prim, b, {'daura': DAURA, 'sari': BLOUSE}.get(spec['outfit'], KURTHA))
     if key == 'girl':
         hpos, huv, htris = geometry(g, head_prim)
         hpts, hmask = position_map(huv, hpos, htris, TEX)
@@ -387,6 +482,16 @@ def build(key):
         add_primitive(g, mesh_index, topi, names, topi_mat)
         for prim, pos in ((head_prim, head_pos), (opacity_prim, opacity_pos)):
             prim['attributes']['POSITION'] = g.add_accessor(press_hair(pos, topi['fit']).astype(np.float32), 34962)
+    elif spec['outfit'] == 'sari':
+        skirt = add_material(g, 'sari', sari_skirt_texture(), 0.5)
+        panel = lower_panel(body_pos, b, z_top=b['Hips'][2] + 0.05, z_hem=0.035, flare=0.12, rows=20,
+                            pleats=(22, 0.012), to_ankle=True)
+        add_primitive(g, mesh_index, panel, names, skirt)
+        drape = add_material(g, 'pallu', pallu_texture(), 0.5)
+        part = pallu(body_pos, b)
+        part['weights'] = transfer_weights(part['positions'], body_pos, g.read(body_prim['attributes']['JOINTS_0']),
+                                           g.read(body_prim['attributes']['WEIGHTS_0']), names)
+        add_primitive(g, mesh_index, part, names, drape)
     else:
         hem_print = kurtha_panel_texture()
         cloth = add_material(g, 'kurtha', hem_print, 0.85)
@@ -396,6 +501,8 @@ def build(key):
         scarf = add_material(g, 'dupatta', dupatta_texture(), 0.75)
         add_primitive(g, mesh_index, dupatta(body_pos, b), names, scarf)
 
+    speeds = add_motion(g, spec['motion'])
+    print(f'  clips: idle, walk ({speeds["walk"]:.2f} m/s), run ({speeds["run"]:.2f} m/s)')
     g.json.setdefault('asset', {})['copyright'] = 'Avatar based on Microsoft Rocketbox (MIT licence, (c) 2020 Microsoft)'
     OUT.mkdir(parents=True, exist_ok=True)
     out = OUT / f'{key}.glb'
@@ -416,6 +523,53 @@ def kurtha_panel_texture(size=512):
     img[y > 0.94] = GOLD_TRIM  # gold band at the hem (v = 1)
     img[(y > 0.91) & (y < 0.925)] = GOLD_TRIM
     return np.clip(img * weave(size, 0.05)[..., None], 0, 1)
+
+
+def butta(x, y, cell):
+    """Small woven gold motifs (buttas) on a staggered grid; returns a boolean mask."""
+    row = np.floor(y / cell)
+    fx = (x + cell * 0.5 * (row % 2)) % cell - cell / 2
+    fy = y % cell - cell / 2
+    r = np.hypot(fx, fy)
+    th = np.arctan2(fy, fx)
+    return (r < cell * (0.13 + 0.07 * np.cos(5 * th))) | (r < cell * 0.05)
+
+
+def sari_skirt_texture(w=512, h=1024):
+    """The sari's skirt: red silk with gold buttas and a broad gold border at the hem.
+    UV: u runs around the body (4 repeats), v from the waist (0) to the hem (1)."""
+    y, x = np.mgrid[0:h, 0:w].astype(np.float32)
+    img = np.zeros((h, w, 3), np.float32) + SARI
+    img[butta(x, y, w / 8)] = SARI_MOTIF
+    v = y / h
+    border = v > 0.86
+    img[border] = GOLD_TRIM
+    # A woven band inside the border: red diamonds on gold.
+    band = (v > 0.89) & (v < 0.96)
+    d = (np.abs((x % 32) - 16) + np.abs(((y - 0.925 * h) % 32) - 16)) < 9
+    img[band & d] = SARI
+    img[(v > 0.835) & (v < 0.845)] = GOLD_TRIM
+    return np.clip(img * weave(max(w, h), 0.03)[:h, :w, None], 0, 1)
+
+
+def pallu_texture(w=2048, h=256):
+    """The pallu: red silk with gold buttas, gold borders along both edges, and the richly woven end
+    (u > 0.8) that hangs down the back. u along the length, v across."""
+    y, x = np.mgrid[0:h, 0:w].astype(np.float32)
+    img = np.zeros((h, w, 3), np.float32) + SARI
+    img[butta(x, y, h / 4)] = SARI_MOTIF
+    v = y / h
+    u = x / w
+    img[(v < 0.1) | (v > 0.9)] = GOLD_TRIM
+    img[((v > 0.12) & (v < 0.135)) | ((v > 0.865) & (v < 0.88))] = GOLD_TRIM
+    end = u > 0.8
+    img[end] = GOLD_TRIM
+    stripes = end & (((u * 60) % 1) < 0.35)
+    img[stripes] = SARI
+    d = end & ((np.abs((x % 48) - 24) + np.abs((y % 48) - 24)) < 10)
+    img[d] = SARI_MOTIF * np.array([1.0, 0.9, 0.7])
+    img[(u > 0.985)] = GOLD_TRIM  # tasselled edge
+    return np.clip(img * weave(w, 0.03)[:h, :w, None], 0, 1)
 
 
 def dupatta_texture(w=1024, h=128):

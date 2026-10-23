@@ -22,6 +22,7 @@ const STEP_MIN_WIDTH = 0.25; // ...when there's room to stand on top, so balustr
 const SNAP_TO_GROUND = 0.5; // stays glued to the floor going down steps and the grand stair's ramp
 const MAX_SLOPE = (50 * Math.PI) / 180; // walkable incline
 const MIN_SLIDE = (35 * Math.PI) / 180; // steeper than this, the capsule slides back down
+const WALL_NORMAL_Y = Math.cos(MAX_SLOPE); // a contact flatter than this is ground or a slope, not a wall
 const MAX_FALL_SPEED = 30;
 const GROUND_STICK = -1; // a small constant pull while grounded keeps ground detection stable
 const MAX_DT = 1 / 15; // a stalled tab resumes smoothly instead of leaping
@@ -31,6 +32,7 @@ const SEND_INTERVAL = 1 / SEND_HZ;
 
 // Scratch vectors, reused every frame so the render loop allocates nothing.
 const moveDir = new Vector3();
+const groundNormal = new Vector3(0, 1, 0);
 const camGoal = new Vector3();
 const lookAt = new Vector3();
 const toCamera = new Vector3();
@@ -120,17 +122,35 @@ export default function LocalPlayer({ avatarId }) {
       ? GROUND_STICK
       : Math.max(motion.verticalSpeed - GRAVITY * dt, -MAX_FALL_SPEED);
 
+    // On the ground, aim the move along the ground's own slope (keeping its horizontal speed), so the
+    // controller doesn't shorten a push into a ramp: the stair climbs at full walking pace.
+    const alongSlope = motion.grounded
+      ? -(groundNormal.x * motion.velocity.x + groundNormal.z * motion.velocity.z) / groundNormal.y
+      : 0;
+
     // Let the controller resolve walls, steps, slopes and the ground.
     c.computeColliderMovement(col, {
       x: motion.velocity.x * dt,
-      y: motion.verticalSpeed * dt,
+      y: (motion.verticalSpeed + alongSlope) * dt,
       z: motion.velocity.z * dt,
     });
     const m = c.computedMovement();
     motion.grounded = c.computedGrounded();
-    // What actually happened becomes the velocity, so sliding along a wall doesn't keep pushing into it.
-    motion.velocity.x = m.x / dt;
-    motion.velocity.z = m.z / dt;
+    // Against a wall, what actually happened becomes the velocity, so sliding along it doesn't keep
+    // pushing into it. Slopes and the stair don't count: feeding their (shorter) horizontal movement
+    // back in would slow the player a little more every frame, down to a crawl on the grand stair.
+    groundNormal.set(0, 1, 0);
+    for (let i = 0; i < c.numComputedCollisions(); i++) {
+      const hit = c.computedCollision(i);
+      if (!hit) continue;
+      const n = hit.normal1;
+      if (Math.abs(n.y) < WALL_NORMAL_Y) {
+        motion.velocity.x = m.x / dt;
+        motion.velocity.z = m.z / dt;
+      } else if (Math.abs(n.y) < groundNormal.y) {
+        groundNormal.set(n.x, n.y, n.z).multiplyScalar(Math.sign(n.y)); // the slope underfoot, pointing up
+      }
+    }
 
     const t = b.translation();
     let x = t.x + m.x;
@@ -143,8 +163,11 @@ export default function LocalPlayer({ avatarId }) {
     }
     b.setNextKinematicTranslation({ x, y, z });
 
-    const speed = Math.hypot(motion.velocity.x, motion.velocity.z);
-    if (speed > 0.1) localMotion.yaw = dampAngle(localMotion.yaw, Math.atan2(motion.velocity.x, motion.velocity.z), 12, dt);
+    // Animation speed: distance actually covered along the ground, climbing included, so the legs keep
+    // walking at the right rate up and down the stair.
+    const across = Math.hypot(m.x, m.z) / dt;
+    const speed = motion.grounded ? Math.hypot(across, m.y / dt) : across;
+    if (across > 0.1) localMotion.yaw = dampAngle(localMotion.yaw, Math.atan2(m.x, m.z), 12, dt);
     localMotion.speed = speed;
     localMotion.anim = speed < 0.1 ? 'idle' : speed > WALK_SPEED + 0.5 ? 'run' : 'walk';
     localMotion.position.set(x, y, z);

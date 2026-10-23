@@ -3,11 +3,10 @@
 //
 // These are third-party files with their own licences, so they stay local and are gitignored:
 //   - Mansion: Khronos glTF Sample Assets "Sponza" (CRYENGINE Limited License; the metadata is CC-BY 4.0)
-//   - Motion-capture clips both avatars play (idle, walk, run): Mixamo "Xbot", as shipped in the three.js
-//     examples (Mixamo terms). If they can't be downloaded, box-built stand-in clips are generated.
 //   - Environment: a Venice sunset HDRI (Poly Haven, CC0), as shipped in three.js examples
-// The avatars themselves (models/avatars/boy.glb and girl.glb) are in the repository: realistic Microsoft
-// Rocketbox characters (MIT licence) dressed in Nepali clothes. Rebuild them with scripts/dress-avatars.py.
+// The avatars (models/avatars/boy.glb and girl.glb) are in the repository, with their motion-capture
+// clips built in: realistic Microsoft Rocketbox characters (MIT licence) dressed in Nepali clothes.
+// Rebuild them with scripts/dress-avatars.py.
 // Check the licences before you publish anything built from them.
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -37,18 +36,10 @@ async function pool(tasks, limit) {
 
 const work = mkdtempSync(join(tmpdir(), 'sponza-'));
 try {
-  // 1. The clips both avatars play.
-  try {
-    await download(`${THREE_EXAMPLES}/models/gltf/Xbot.glb`, join(PUBLIC, 'models/animations/locomotion.glb'));
-  } catch (err) {
-    console.warn(`[assets] motion-capture clips unavailable (${err.message}); generating stand-ins instead`);
-    execFileSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), 'make-standins.mjs'), '--avatars'], { stdio: 'inherit' });
-  }
-
-  // 2. Lighting.
+  // 1. Lighting.
   await download(`${THREE_EXAMPLES}/textures/equirectangular/venice_sunset_1k.hdr`, join(PUBLIC, 'hdri/venice_sunset_1k.hdr'));
 
-  // 3. Sponza: the .gltf refers to a .bin and 69 textures, so fetch them all, then pack and compress.
+  // 2. Sponza: the .gltf refers to a .bin and 69 textures, so fetch them all, then pack and compress.
   await download(`${SPONZA}/Sponza.gltf`, join(work, 'Sponza.gltf'));
   const gltf = JSON.parse(readFileSync(join(work, 'Sponza.gltf'), 'utf8'));
   const files = [...gltf.buffers.map((b) => b.uri), ...gltf.images.map((i) => i.uri)];

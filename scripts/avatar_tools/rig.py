@@ -23,6 +23,8 @@ def mixamo_name(biped):
             return side + limbs[part]
         if part.startswith('Finger'):
             digits = part[len('Finger'):]  # "0", "01", "02" -> thumb segments 1, 2, 3
+            if not digits.isdigit():
+                return None  # end markers such as "Finger0Nub"
             finger = FINGERS.get(digits[0])
             if finger:
                 return f'{side}Hand{finger}{1 + int(digits[1]) if len(digits) > 1 else 1}'

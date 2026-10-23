@@ -16,7 +16,7 @@ buffer-zone/
 │   ├── .env.example       VITE_SERVER_URL
 │   ├── vite.config.js     code-splitting for the 3D engine
 │   ├── public/            static, cacheable assets (served as-is)
-│   │   ├── models/        mansion.glb (Sponza interior), avatars/{boy,girl}.glb (committed), animations/locomotion.glb
+│   │   ├── models/        mansion.glb (Sponza interior), avatars/{boy,girl}.glb (committed, clips built in)
 │   │   ├── hdri/          venice_sunset_1k.hdr (image-based lighting)
 │   │   ├── photos/        your photos, referenced by gallery/photos.js (placeholders until you add yours)
 │   │   ├── audio/         footstep.wav, romantic-theme.wav (placeholders until you add yours)
@@ -108,11 +108,13 @@ the interpolation delay (`INTERP_DELAY_MS = 110` in `world/config.js`).
 - **Local player:** a kinematic capsule (1.8 m, radius 0.35 m) moved by Rapier's character controller. It
   shape-casts, so it can't tunnel through walls at sprint speed; it steps up kerbs to 0.3 m (where there's
   25 cm to stand on, so urns and balustrade bases stay obstacles), snaps to the ground going down, climbs the
-  grand stair's 32° ramp, and treats slopes over 50° as walls. Walk 3.5 m/s, sprint 8 m/s, with eased acceleration
-  (λ = 10) and a slightly faster stop (λ = 14). The house is scaled 1.5× (`MANSION_SCALE`) to cathedral size.
-- **Blend tree:** a 1-D tree on ground speed, idle → walk (3.5 m/s) → run (8 m/s), with linear cross-weights
-  that sum to 1. Weights are damped every frame (`λ = 8`), so transitions never pop. Each clip plays at
-  speed ÷ its capture speed (`CLIP_REFERENCE_SPEED`), so feet don't slide.
+  grand stair's 32° ramp, and treats slopes over 50° as walls. On the ground, each move is aimed along the slope
+  underfoot, so ramps and the stair are climbed at walking pace; only walls take speed away. Walk 2.2 m/s, run
+  5.8 m/s (human speeds, close to the clips' own), with eased acceleration (λ = 10) and a slightly faster stop (λ = 14). The house is scaled 1.5× (`MANSION_SCALE`) to cathedral size.
+- **Blend tree:** a 1-D tree on ground speed, idle → walk (2.2 m/s) → run (5.8 m/s), with linear cross-weights
+  that sum to 1. Weights are damped every frame (`λ = 8`), so transitions never pop. Ground speed counts the
+  distance covered along a slope, so climbing the stair plays the walk at full rate. Each clip plays at
+  speed ÷ its capture speed (each avatar's `clipSpeed`), so feet don't slide.
 - **Partner:** visual only, no collider. Each server snapshot is stamped with the local receive time, and the partner is
   rendered `INTERP_DELAY_MS` in the past, blending between the two snapshots that bracket that moment. This needs no clock
   sync between machines, and it holds the last pose if packets stop instead of extrapolating.
@@ -120,9 +122,10 @@ the interpolation delay (`INTERP_DELAY_MS = 110` in `world/config.js`).
   look point to the camera pulls the camera in when a wall is in the way, so the view never clips through the house.
 - **Phase lock:** while walk and run blend, the run clip is set to walk's point in its cycle, so the legs don't ghost.
 - **Avatars:** the host is the boy, the guest the girl (`AVATAR_BY_ROLE`). Both are realistic Microsoft Rocketbox
-  characters (MIT licence), dressed in Nepali clothes (see [Nepali dress](#nepali-dress)). Both play one shared
-  motion-capture set (Mixamo idle, walk and run, from the Xbot file), retargeted onto each rig when it loads
-  (`avatar/retarget.js`). The retarget poses the source skeleton
+  characters (MIT licence), dressed in Nepali clothes (see [Nepali dress](#nepali-dress)). Each carries its own
+  motion capture from the same library and skeleton (male or female idle, fast walk and run), so it plays exactly as
+  recorded. A model with a different rig can take its clips from another file instead (`clipSource`); they are then
+  retargeted when it loads (`avatar/retarget.js`). The retarget poses the source skeleton
   in world space and carries each bone's rotation from its own rest pose onto the target bone's rest pose, so it
   copes with different armature rotations and units, T-pose versus A-pose rests, rigs that face -Z instead of +Z, and
   different hierarchies (a 3ds Max Biped hangs the thighs from the spine and the collarbones from the neck).
@@ -247,41 +250,43 @@ Assets: download and build the house, avatars and lighting with:
 cd client && npm run assets
 ```
 
-This fetches Khronos **Sponza** (a stone palace interior, about 52 MB, packed to about 11 MB with Draco and WebP), the
-motion-capture clips both avatars play (`animations/locomotion.glb`: Mixamo Xbot with idle, walk and run, from the three.js
-examples), and a Venice sunset HDRI. If the clips can't be downloaded, box-rig stand-ins are written instead. The house is also
-its own collider, so walls, columns and floors stop the player.
+This fetches Khronos **Sponza** (a stone palace interior, about 52 MB, packed to about 11 MB with Draco and WebP) and a Venice
+sunset HDRI. The house is also its own collider, so walls, columns and floors stop the player. The avatars and their animations
+are already in the repository.
 
-Licences: these files are third-party. Sponza is under the CRYENGINE Limited License Agreement and the Mixamo clips under Mixamo's
-terms. They stay in your local `client/public/`, which the `.gitignore` excludes, and should not be published without checking
-those terms. The HDRI is from Poly Haven (CC0). The two avatars are in the repository: they are derived from Microsoft Rocketbox
-under the MIT licence (`client/public/models/avatars/LICENSE-ROCKETBOX.txt`).
+Licences: Sponza is under the CRYENGINE Limited License Agreement; it stays in your local `client/public/`, which the
+`.gitignore` excludes, and should not be published without checking those terms. The HDRI is from Poly Haven (CC0). The two
+avatars and their motion capture are derived from Microsoft Rocketbox under the MIT licence
+(`client/public/models/avatars/LICENSE-ROCKETBOX.txt`).
 
 ### Nepali dress
 
-![The boy in daura suruwal, waistcoat and Dhaka topi; the girl in kurtha surwal and dupatta](docs/images/nepali-avatars.png)
+![The boy in daura suruwal, waistcoat and Dhaka topi; the girl in a red sari](docs/images/nepali-avatars.png)
 
 `scripts/dress-avatars.py` builds `boy.glb` and `girl.glb` from two realistic Microsoft Rocketbox characters:
 
 | | Base | Outfit |
 |---|---|---|
 | Boy (host) | `Male_Adult_10` | cream daura suruwal, black waistcoat with gold buttons, a Dhaka topi, black shoes |
-| Girl (guest) | `Female_Adult_01` | maroon kurtha with a gold floral print and gold trim, cream surwal, a marigold dupatta; hair darkened to black |
+| Girl (guest) | `Female_Adult_01` | a red silk sari with gold buttas and a gold border, its pleated skirt to the floor and its pallu across the chest, over the left shoulder and down the back; a maroon cholo with elbow sleeves and gold edging; hair darkened to black |
 
 How it works: it converts the FBX with FBX2glTF, renames the Biped bones to Mixamo names, then repaints the clothes "in 3D":
 every texel of the body texture is mapped back to the point on the body it covers, so each garment is painted by body region
-(torso, sleeves, legs, feet) while keeping the original folds and shading. The knee-length skirt of the daura and kurtha (the
-kurtha's with side slits), the Dhaka topi (woven pattern, lopsided crown, hair pressed flat underneath) and the dupatta are
-generated as skinned meshes that move with the body.
+(torso, sleeves, legs, feet) while keeping the original folds and shading. The daura's knee-length skirt, the sari's
+floor-length pleated skirt (whose hem follows the shins as she walks), its pallu (draped along the exact body surface, found
+by ray casts, and skinned like the skin beneath it) and the Dhaka topi (woven pattern, lopsided crown, hair pressed flat
+underneath) are generated as skinned meshes that move with the body. Finally it adds Rocketbox's own motion capture (idle,
+fast walk and run, male or female) as the avatar's animations, in place, and prints each clip's natural speed for
+`clipSpeed` in `world/config.js`. A kurtha surwal with dupatta is still available: set the girl's `outfit` to `kurtha`.
 
-To change colours or outfits, edit the colour constants and `dress_daura` / `dress_kurtha` in the script, then run
+To change colours or outfits, edit the colour constants and `dress_daura` / `dress_sari` in the script, then run
 `python3 scripts/dress-avatars.py` (needs Python 3.9+ with numpy and Pillow, and Node.js for FBX2glTF; it downloads about
 150 MB of source files into `scripts/.avatar-cache/`). To pick other Rocketbox people, change `AVATARS` in the script:
 previews of all of them are in the Rocketbox repository.
 
 Limits: the clothes are painted onto the original outfits' shapes, so the boy's suruwal keeps the cut of track trousers and the
-girl's kurtha keeps a shirt collar and pockets in its relief; the skirts and dupatta are skinned, not simulated cloth, so they
-can clip a little at full stride. For tailored, simulated clothing, a 3D artist would model the garments in Marvelous Designer
+girl's cholo keeps a shirt collar; the skirts and the pallu are skinned, not simulated cloth, so they can clip a little at full
+stride, most of all when running in the sari. For tailored, simulated clothing, a 3D artist would model the garments in Marvelous Designer
 or Blender.
 
 The photos and music are still placeholders. Run `cd client && npm run standins` to regenerate them, and replace them with
@@ -297,8 +302,9 @@ for testing and profiling; production builds strip them.
 **Verifying it yourself**
 
 1. `cd client && npm run assets`, then start the server and client as above. Create a room in one tab, join in another.
-2. Avatars: the host is the boy in daura suruwal and Dhaka topi, the guest the girl in kurtha surwal and dupatta. Walk toward
-   each other: arms hang naturally, both face the way they move, and within 4.5 m each turns to look at the other.
+2. Avatars: the host is the boy in daura suruwal and Dhaka topi, the guest the girl in a sari. Walk toward each other: legs
+   stride and arms swing, both face the way they move, and within 4.5 m each turns to look at the other. Hold Shift to run.
+   Walk up the grand stair: the walk keeps its full stride all the way up.
 3. Rooms: walk east up the grand stair from the spawn, across the landing through either arch, and down onto the bridge.
    Room names fade in as you cross into each room. The hearth is on the north aisle's east half, the study lamps on its west half.
 4. Frame rate: open the browser's performance panel (or add `r3f-perf`), and check frame time stays under 11.1 ms. In the console,
