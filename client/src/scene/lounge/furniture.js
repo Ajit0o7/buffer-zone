@@ -125,26 +125,31 @@ function tuftedPanel(width, height, depth, spacingX, rows) {
   const oy = -height / 2;
   const gradU = Math.sqrt(1 / (sx * sx) + 1 / (4 * sy * sy));
   const buttons = [];
+  const lattice = new Set(); // 'i,j' of every button, for a quick nearest-button lookup per vertex
   for (let j = 1; j <= rows; j++) {
     for (let i = 0; i <= cols * 2; i++) {
       if ((i + j) % 2) continue; // diamond lattice: alternate rows are offset by half a step
       const x = ox + (i * sx) / 2;
       if (x < -width / 2 + sx * 0.3 || x > width / 2 - sx * 0.3) continue;
       buttons.push(new Vector3(x, oy + j * sy, depth * 0.12));
+      lattice.add(`${i},${j}`);
     }
   }
   const pos = g.attributes.position;
   for (let k = 0; k < pos.count; k++) {
     const x = pos.getX(k);
     const y = pos.getY(k);
-    let dimple = 0;
-    for (const b of buttons) {
-      const d2 = (x - b.x) ** 2 + (y - b.y) ** 2;
-      dimple = Math.max(dimple, Math.exp(-d2 / (0.032 * 0.032)));
-    }
-    // Pleats: the diagonals through the buttons, in lattice coordinates u and v.
     const a = (x - ox) / (sx / 2);
     const bb = (y - oy) / sy;
+    let dimple = 0;
+    for (let j = Math.floor(bb); j <= Math.ceil(bb); j++) {
+      for (let i = Math.floor(a) - 1; i <= Math.ceil(a) + 1; i++) {
+        if (!lattice.has(`${i},${j}`)) continue;
+        const d2 = (x - (ox + (i * sx) / 2)) ** 2 + (y - (oy + j * sy)) ** 2;
+        dimple = Math.max(dimple, Math.exp(-d2 / (0.032 * 0.032)));
+      }
+    }
+    // Pleats: the diagonals through the buttons, in lattice coordinates u and v.
     const u = (a + bb) / 2;
     const v = (a - bb) / 2;
     const du = Math.abs(u - Math.round(u)) / gradU;
@@ -201,14 +206,14 @@ export function chesterfield(batch, M, { width, depth, cushions, seatTop = 0.45 
     batch.add('velvet', rbox(panelW - 0.02, rollY - panelBottom - 0.04, 0.02, 0.008), under(M, T(s * (armInner + panelW / 2), (panelBottom + rollY) / 2 - 0.02, depth / 2 - 0.004)), FINISH.velvetShade);
   }
 
-  // Back: a body, a roll along the top, and the tufted face.
-  const backBodyD = backDepth - 0.06;
-  batch.add('velvet', rbox(width - 2 * r, rollY - legH - 0.2, backBodyD, 0.02), under(M, T(0, (legH + 0.2 + rollY) / 2, rear + backBodyD / 2 + 0.01)), V);
-  batch.add('velvet', cyl(r * 0.96, r * 0.96, width - 2 * r + 0.02, 28), under(M, T(0, rollY + 0.005, rear + r, 0, 0, Math.PI / 2)), V);
-  const backFaceZ = rear + backDepth - 0.06;
+  // Back: a body, a slimmer roll along the top, and the tufted face in front of the roll, rising to just under it.
+  const rb = 0.085;
+  const backFaceZ = rear + 2 * rb;
+  batch.add('velvet', rbox(width - 2 * r, rollY - legH - 0.2, backFaceZ - rear - 0.01, 0.02), under(M, T(0, (legH + 0.2 + rollY) / 2, (rear + backFaceZ) / 2 + 0.005)), V);
+  batch.add('velvet', cyl(rb, rb, width - 2 * r + 0.04, 28), under(M, T(0, rollY + 0.03, rear + rb, 0, 0, Math.PI / 2)), V);
   const tuftBottom = seatTop - 0.03;
-  const tuftTop = rollY + 0.02;
-  const back = tuftedPanel(armInner * 2, tuftTop - tuftBottom, 0.06, 0.19, 3);
+  const tuftTop = rollY + 0.06;
+  const back = tuftedPanel(armInner * 2, tuftTop - tuftBottom, 0.075, 0.2, 3);
   const backM = under(M, T(0, (tuftBottom + tuftTop) / 2, backFaceZ));
   batch.add('velvet', back.geometry, backM, V);
   for (const b of back.buttons) batch.add('velvet', new SphereGeometry(0.011, 8, 6), under(backM, T(b.x, b.y, b.z)), FINISH.button);
@@ -493,9 +498,14 @@ export function grandPiano(batch, M) {
   const plate = shapeOf(plateOuter);
   plate.holes.push(pathOf(plateInner));
   batch.add('brass', slab(plate, 0.02, 0.84), M, FINISH.brass);
-  for (const [x0, z0, x1, z1] of [[0.55, 0.28, -0.25, 1.15], [0.25, 0.28, 0.35, 1.45]]) {
-    const a = new Vector3(x0, 0.835, z0);
-    const b = new Vector3(x1, 0.835, z1);
+  for (const [x0, z0, x1, z1] of [[0.55, 0.3, -0.2, 1.05], [0.3, 0.3, 0.38, 1.45]]) {
+    // Keep each strut's ends inside the plate, which narrows along the bentside.
+    const fit = (x, z) => {
+      const [lo, hi] = spanAt(plateInner, z);
+      return Math.min(hi - 0.05, Math.max(lo + 0.05, x));
+    };
+    const a = new Vector3(fit(x0, z0), 0.835, z0);
+    const b = new Vector3(fit(x1, z1), 0.835, z1);
     batch.add('brass', cyl(0.025, 0.025, 1, 6), under(M, between(a, b)), FINISH.brass);
   }
   const strings = 44;

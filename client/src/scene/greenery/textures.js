@@ -79,31 +79,40 @@ export function lanceTexture() {
 /** Fiddle-leaf fig: broad at the tip, pinched at the waist, wavy-edged, with strong pale veins. */
 export function figTexture() {
   const [c, g] = canvas(256, 256);
+  // Half-width along the blade (t = 0 at the stalk, 1 at the tip): the violin outline.
+  const keys = [[0, 0.08], [0.1, 0.36], [0.24, 0.5], [0.38, 0.4], [0.55, 0.78], [0.72, 0.96], [0.86, 0.88], [0.95, 0.55], [1, 0]];
+  const half = (t) => {
+    let i = 0;
+    while (i < keys.length - 2 && t > keys[i + 1][0]) i++;
+    const [t0, a] = keys[i];
+    const [t1, b] = keys[i + 1];
+    const u = (t - t0) / (t1 - t0);
+    return a + (b - a) * (0.5 - 0.5 * Math.cos(Math.PI * u));
+  };
+  const y = (t) => 250 - t * 244;
+  const edge = (t, side) => 128 + side * 120 * half(t) * (1 + 0.025 * Math.sin(t * 23));
   g.fillStyle = bladeShade(g, 256, 256);
   g.beginPath();
-  g.moveTo(128, 250);
-  g.bezierCurveTo(70, 246, 54, 200, 66, 168); // base
-  g.bezierCurveTo(76, 140, 30, 120, 18, 80); // waist out to the shoulders
-  g.bezierCurveTo(8, 40, 60, 2, 128, 6); // broad rounded tip
-  g.bezierCurveTo(196, 2, 248, 40, 238, 80);
-  g.bezierCurveTo(226, 120, 180, 140, 190, 168);
-  g.bezierCurveTo(202, 200, 186, 246, 128, 250);
+  g.moveTo(128, y(0));
+  for (let t = 0; t <= 1.0001; t += 0.01) g.lineTo(edge(t, -1), y(t));
+  for (let t = 1; t >= 0; t -= 0.01) g.lineTo(edge(t, 1), y(t));
   g.fill();
-  g.strokeStyle = 'rgba(255,255,240,0.95)';
+  // Veins: a thick midrib and paired laterals curving toward the tip.
+  g.strokeStyle = 'rgba(255,255,235,0.95)';
   g.lineWidth = 5;
   g.beginPath();
   g.moveTo(128, 256);
-  g.lineTo(128, 12);
+  g.lineTo(128, y(0.97));
   g.stroke();
-  g.lineWidth = 2.5;
+  g.lineWidth = 2.2;
   g.beginPath();
-  for (let k = 0; k < 7; k++) {
-    const y = 220 - k * 30;
-    const spread = 40 + 60 * Math.sin((k / 7) * Math.PI);
-    g.moveTo(128, y);
-    g.quadraticCurveTo(128 - spread * 0.5, y - 10, 128 - spread, y - 30);
-    g.moveTo(128, y);
-    g.quadraticCurveTo(128 + spread * 0.5, y - 10, 128 + spread, y - 30);
+  for (let k = 1; k < 10; k++) {
+    const t = k * 0.095;
+    const reach = 120 * half(Math.min(1, t + 0.08)) * 0.88;
+    for (const side of [-1, 1]) {
+      g.moveTo(128, y(t));
+      g.quadraticCurveTo(128 + side * reach * 0.55, y(t + 0.02), 128 + side * reach, y(t + 0.1));
+    }
   }
   g.stroke();
   return texture(c);
@@ -126,12 +135,12 @@ export function racemeTexture() {
     const x = 48 + (rand() * 2 - 1) * half;
     const r = 7.5 - u * 4.5 + rand() * 1.5;
     // Open florets near the top are pale lilac; buds toward the tip deepen to violet.
-    const l = 78 - u * 30 + rand() * 8;
-    g.fillStyle = `hsl(${268 + rand() * 14}, ${45 + u * 25}%, ${l}%)`;
+    const l = 80 - u * 30 + rand() * 7;
+    g.fillStyle = `hsl(${256 + rand() * 14 + u * 6}, ${38 + u * 22}%, ${l}%)`;
     g.beginPath();
     g.ellipse(x, y, r, r * 0.8, rand() * 3, 0, Math.PI * 2);
     g.fill();
-    g.fillStyle = `hsla(${280}, 60%, ${l - 22}%, 0.7)`;
+    g.fillStyle = `hsla(266, 50%, ${l - 24}%, 0.7)`;
     g.beginPath();
     g.arc(x + r * 0.15, y + r * 0.2, r * 0.35, 0, Math.PI * 2);
     g.fill();

@@ -14,17 +14,18 @@ function random(seed) {
   };
 }
 
+// Vegetable dyes, a little faded: madder reds, indigo, undyed ivory wool, saffron gold.
 const RUG = {
-  red: '#8a1a1c',
-  redDeep: '#5c0e13',
-  navy: '#1c2650',
-  navyDeep: '#121a38',
-  ivory: '#e9dcc0',
-  gold: '#c9973f',
-  sky: '#6b8bb3',
-  green: '#3f5b3c',
-  ink: '#2a1813',
-  rose: '#c2584e',
+  red: '#7a1d1f',
+  redDeep: '#4f1216',
+  navy: '#1b2242',
+  navyDeep: '#11172d',
+  ivory: '#d8c7a2',
+  gold: '#b48438',
+  sky: '#5a7190',
+  green: '#3c5037',
+  ink: '#23150f',
+  rose: '#a5524a',
 };
 
 /** A lobed outline (r(θ) = 1 + a·cos(nθ)), stretched to rx × ry, as a closed canvas path. */
@@ -47,11 +48,14 @@ function rosette(ctx, x, y, r, petal, centre, ring = null) {
   ctx.save();
   ctx.translate(x, y);
   ctx.fillStyle = petal;
+  ctx.strokeStyle = RUG.ink;
+  ctx.lineWidth = Math.max(1, r * 0.06);
   for (let k = 0; k < 8; k++) {
     ctx.rotate(Math.PI / 4);
     ctx.beginPath();
     ctx.ellipse(r * 0.55, 0, r * 0.45, r * 0.2, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
   }
   if (ring) {
     ctx.strokeStyle = ring;
@@ -184,11 +188,11 @@ export function rugTexture({ length, width, fringe, pixels = 2048, seed = 7 }) {
       const ny = ux;
       // The stem.
       ctx.strokeStyle = C.gold;
-      ctx.lineWidth = main * 0.05;
+      ctx.lineWidth = main * 0.03;
       ctx.beginPath();
       for (let i = 0; i <= n * 16; i++) {
         const t = i / (n * 16);
-        const wob = Math.sin(t * n * Math.PI) * main * 0.22;
+        const wob = Math.sin(t * n * Math.PI) * main * 0.14;
         const px = sx + (ex - sx) * t + nx * wob;
         const py = sy + (ey - sy) * t + ny * wob;
         if (i === 0) ctx.moveTo(px, py);
@@ -256,10 +260,10 @@ export function rugTexture({ length, width, fringe, pixels = 2048, seed = 7 }) {
   ctx.fillRect(fx0, fy0, fw, fh);
 
   // Lattice of diamonds in a darker red, with a small flower at every node and a sprig in every cell.
-  const cell = m(0.2);
+  const cell = m(0.12);
   ctx.strokeStyle = C.redDeep;
-  ctx.lineWidth = m(0.012);
-  for (let k = -40; k <= 40; k++) {
+  ctx.lineWidth = m(0.008);
+  for (let k = -60; k <= 60; k++) {
     ctx.beginPath();
     ctx.moveTo(cx + k * cell - fh, cy - fh);
     ctx.lineTo(cx + k * cell + fh, cy + fh);
@@ -267,15 +271,17 @@ export function rugTexture({ length, width, fringe, pixels = 2048, seed = 7 }) {
     ctx.lineTo(cx + k * cell - fh, cy + fh);
     ctx.stroke();
   }
-  for (let j = -20; j <= 20; j++) {
-    for (let i = -30; i <= 30; i++) {
+  for (let j = -30; j <= 30; j++) {
+    for (let i = -45; i <= 45; i++) {
       const px = cx + i * cell;
       const py = cy + j * cell;
       if (px < fx0 - cell || px > fx1 + cell || py < fy0 - cell || py > fy1 + cell) continue;
-      if ((i + j) % 2 === 0) rosette(ctx, px, py, cell * 0.2, (i + j) % 4 === 0 ? C.ivory : C.gold, C.navy);
+      if ((i + j) % 2 === 0) rosette(ctx, px, py, cell * 0.24, (i + j) % 4 === 0 ? C.ivory : C.gold, C.navy);
       else {
-        leaf(ctx, px, py, cell * 0.2, -Math.PI / 2, C.navy);
-        leaf(ctx, px, py, cell * 0.2, Math.PI / 2, C.navy);
+        leaf(ctx, px, py, cell * 0.24, -Math.PI / 2, C.navy);
+        leaf(ctx, px, py, cell * 0.24, Math.PI / 2, C.navy);
+        leaf(ctx, px, py, cell * 0.16, 0, C.green);
+        leaf(ctx, px, py, cell * 0.16, Math.PI, C.green);
         ctx.fillStyle = C.gold;
         ctx.beginPath();
         ctx.arc(px, py, cell * 0.04, 0, Math.PI * 2);
@@ -331,17 +337,20 @@ export function rugTexture({ length, width, fringe, pixels = 2048, seed = 7 }) {
 
   // The medallion: layered lobed rings, navy, ivory, gold, red, and a rosette at its heart.
   const layers = [
-    [1.0, C.ivory, 16, 0.07],
-    [0.95, C.navy, 16, 0.07],
-    [0.68, C.gold, 12, 0.08],
-    [0.64, C.red, 12, 0.08],
-    [0.4, C.ivory, 8, 0.1],
-    [0.36, C.navyDeep, 8, 0.1],
+    [1.0, C.ivory, 24, 0.045],
+    [0.95, C.navy, 24, 0.045],
+    [0.68, C.gold, 16, 0.06],
+    [0.64, C.red, 16, 0.06],
+    [0.4, C.ivory, 12, 0.08],
+    [0.36, C.navyDeep, 12, 0.08],
   ];
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = m(0.008);
   for (const [k, col, lobes, depth] of layers) {
     ctx.fillStyle = col;
     lobed(ctx, cx, cy, mrx * k, mry * k, lobes, depth);
     ctx.fill();
+    ctx.stroke();
   }
   // Rosettes around the navy ring and palmettes pointing out.
   for (let k = 0; k < 16; k++) {
@@ -373,11 +382,11 @@ export function rugTexture({ length, width, fringe, pixels = 2048, seed = 7 }) {
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < bw; x++) {
       const i = (y * bw + x) * 4;
-      const knot = ((x >> 1) + (y >> 1)) & 1 ? 0.97 : 1.02;
+      const knot = ((x >> 1) + (y >> 1)) & 1 ? 0.95 : 1.03;
       const wx = (x / bw - 0.5) * 2;
       const wy = (y / H - 0.5) * 2;
       const wear = 1 - 0.07 * Math.exp(-(wx * wx * 3 + wy * wy * 2));
-      const k = knot * wear * (1 + bands[x] + (rand() - 0.5) * 0.09);
+      const k = knot * wear * (1 + bands[x] + (rand() - 0.5) * 0.16);
       d[i] = Math.min(255, d[i] * k);
       d[i + 1] = Math.min(255, d[i + 1] * k);
       d[i + 2] = Math.min(255, d[i + 2] * k);
@@ -454,9 +463,9 @@ export function marbleTexture({ pixels = 1024, seed = 3 } = {}) {
     }
     ctx.stroke();
   };
-  for (let k = 0; k < 6; k++) vein(S * 0.02, 0.08, '110, 110, 120', S * 0.008);
-  for (let k = 0; k < 10; k++) vein(S * 0.004, 0.35, '95, 95, 105', 1);
-  for (let k = 0; k < 3; k++) vein(S * 0.003, 0.45, '170, 135, 80', 0);
+  for (let k = 0; k < 7; k++) vein(S * 0.025, 0.07, '120, 120, 128', S * 0.01);
+  for (let k = 0; k < 9; k++) vein(S * 0.004, 0.18, '110, 110, 118', 1.5);
+  for (let k = 0; k < 3; k++) vein(S * 0.003, 0.25, '175, 140, 85', 1);
   ctx.filter = 'none';
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;

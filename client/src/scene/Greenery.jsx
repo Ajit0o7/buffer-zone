@@ -1,8 +1,10 @@
 import { useEffect, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
+import { useGLTF } from '@react-three/drei';
 import { CuboidCollider, CylinderCollider, RigidBody } from '@react-three/rapier';
-import { InstancedMesh, Mesh, MeshStandardMaterial, Vector3 } from 'three';
+import { InstancedMesh, Mesh, MeshStandardMaterial, Raycaster, Vector3 } from 'three';
 import { stoneMaterial } from './stone';
+import { DRACO_PATH, withKTX2 } from './loaders';
 import { LANDING, STAIR_START } from './GrandStair';
 import { foliageMaterial, windTime } from './greenery/foliageMaterial';
 import { crossGeometry, InstanceList, leafGeometry, mergeParts, seeded } from './greenery/geometry';
@@ -27,16 +29,16 @@ const CURTAINS = {
 // Ivy fallen from the tops of a few upper arches down the faces of their piers: [x, face z, out].
 const DRAPES = [[-7.4, 2.12, -1], [1.45, 2.12, -1], [-3.0, -2.98, 1], [5.9, -2.98, 1]];
 
-// Potted trees in the aisles, tucked behind ground-floor columns (the aisle stays 3 m wide beside them).
+// Potted trees in the aisles, tucked behind ground-floor columns (the aisle stays 2.8 m wide beside them).
 const TREES = [
-  { kind: 'olive', pot: 'terracotta', x: -7.0, z: 3.42, height: 2.55 },
-  { kind: 'fig', pot: 'urn', x: -3.1, z: 3.42, height: 1.25 },
-  { kind: 'olive', pot: 'urn', x: 1.1, z: 3.42, height: 2.4 },
-  { kind: 'fig', pot: 'terracotta', x: 5.4, z: 3.42, height: 1.3 },
-  { kind: 'fig', pot: 'terracotta', x: -7.0, z: -4.2, height: 1.3 },
-  { kind: 'olive', pot: 'terracotta', x: -3.1, z: -4.2, height: 2.5 },
-  { kind: 'fig', pot: 'urn', x: 1.1, z: -4.2, height: 1.2 },
-  { kind: 'olive', pot: 'urn', x: 5.4, z: -4.2, height: 2.45 },
+  { kind: 'olive', pot: 'terracotta', x: -7.0, z: 3.57, height: 2.55 },
+  { kind: 'fig', pot: 'urn', x: -3.1, z: 3.57, height: 1.25 },
+  { kind: 'olive', pot: 'urn', x: 1.1, z: 3.57, height: 2.4 },
+  { kind: 'fig', pot: 'terracotta', x: 5.4, z: 3.57, height: 1.3 },
+  { kind: 'fig', pot: 'terracotta', x: -7.0, z: -4.35, height: 1.3 },
+  { kind: 'olive', pot: 'terracotta', x: -3.1, z: -4.35, height: 2.5 },
+  { kind: 'fig', pot: 'urn', x: 1.1, z: -4.35, height: 1.2 },
+  { kind: 'olive', pot: 'urn', x: 5.4, z: -4.35, height: 2.45 },
 ];
 
 // Flowers on pedestals against the aisle walls, between the paintings (each over 1 m clear of a curtain).
@@ -44,9 +46,11 @@ const STANDS = [
   { kind: 'hydrangeas', x: -3.25, z: 6.55 },
   { kind: 'roses', x: 5.9, z: 6.55 },
   { kind: 'roses', x: -2.4, z: -7.4 },
-  { kind: 'hydrangeas', x: 1.0, z: -7.4 },
+  { kind: 'hydrangeas', x: 0.8, z: -7.4 }, // these two flank the corridor's door
   { kind: 'hydrangeas', x: 11.6, z: -7.4 },
 ];
+
+const MANSION_URL = '/models/mansion.glb'; // the file Mansion.jsx loads; cached, so never fetched twice
 
 const LOWEST = 3.45; // hanging plants stop well above heads in the courtyard
 const STAIR_CLEARANCE = 2.4; // ...and this far above the grand stair's treads beside them
@@ -75,8 +79,9 @@ function build(stoneMap) {
     const at = new Vector3(t.x, 0, t.z);
     const pot = t.pot === 'urn' ? stoneUrn(ctx, at) : terracottaPot(ctx, at);
     const base = new Vector3(t.x, pot.soil, t.z);
-    if (t.kind === 'olive') oliveTree(ctx, rand, base, t.height - pot.height);
-    else figTree(ctx, rand, base, t.height);
+    const away = new Vector3(0, 0, Math.sign(t.z)); // from the column, into the aisle
+    if (t.kind === 'olive') oliveTree(ctx, rand, base, t.height - pot.height, away);
+    else figTree(ctx, rand, base, t.height, away);
     colliders.push({ kind: 'cylinder', position: [t.x, pot.height / 2, t.z], args: [pot.height / 2, pot.radius] });
   }
   for (const s of STANDS) {
@@ -97,13 +102,14 @@ function build(stoneMap) {
   const meshes = [
     instanced('ivy', ctx.ivy, leafGeometry({ fold: 0.15 }), foliageMaterial(ivyMap, { roughness: 0.6 })),
     instanced('lance', ctx.lance, leafGeometry({ fold: 0.2, segX: 2, segY: 1 }), foliageMaterial(lanceMap, { roughness: 0.8 })),
-    instanced('fig', ctx.fig, leafGeometry({ fold: 0.1, curl: 0.16, segY: 4 }), foliageMaterial(figMap, { roughness: 0.38, glow: 0.08 })),
+    instanced('fig', ctx.fig, leafGeometry({ fold: 0.1, curl: 0.16, segY: 4 }), foliageMaterial(figMap, { roughness: 0.5, glow: 0.08 })),
     instanced('wisteria', ctx.raceme, crossGeometry(), foliageMaterial(racemeMap, { roughness: 0.8, glow: 0.18 })),
     instanced('blossom', ctx.bloom, leafGeometry({ fold: 0.25, segX: 2, segY: 1 }), foliageMaterial(bloomMap, { roughness: 0.7, cells: 2, glow: 0.15 }), true),
   ];
   const solid = new Mesh(mergeParts(ctx.solid), new MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 }));
   solid.name = 'greenery-solid';
   const stone = new Mesh(mergeParts(ctx.stone), stoneMaterial(stoneMap, { roughness: 0.9, metalness: 0 }));
+  stone.material.color.set('#d9d1c0'); // weathered, a shade darker than fresh-cut limestone
   stone.name = 'greenery-stone';
   for (const m of [solid, stone]) {
     m.receiveShadow = true;
@@ -111,6 +117,19 @@ function build(stoneMap) {
   }
   meshes.push(solid, stone);
   return { meshes, textures, colliders };
+}
+
+/** The house's nave-floor texture, found the way Mansion.jsx finds it, for when none is passed in. */
+function useHouseStone(stoneMap) {
+  const gl = useThree((s) => s.gl);
+  const { scene } = useGLTF(MANSION_URL, DRACO_PATH, false, withKTX2(gl));
+  return useMemo(() => {
+    if (stoneMap) return stoneMap;
+    scene.updateMatrixWorld(true);
+    const origin = scene.localToWorld(new Vector3(-2, 2, 0));
+    const hit = new Raycaster(origin, new Vector3(0, -1, 0)).intersectObject(scene, true)[0];
+    return hit?.object.material?.map ?? null;
+  }, [scene, stoneMap]);
 }
 
 /**
@@ -125,11 +144,13 @@ function build(stoneMap) {
  *
  * Seven draw calls in all: one instanced mesh per kind of leaf or flower (ivy; narrow leaves; fig;
  * wisteria racemes; blossoms) and two merged meshes (vertex-coloured pots, bark and stems; stone urns
- * and pedestals, which take the house's floor texture when it is passed as `stoneMap`). Pots and
+ * and pedestals, in the house's own stone: `stoneMap` if passed, else the floor texture of the mansion
+model, looked up the same way Mansion.jsx does). Pots and
  * pedestals are solid; hanging plants are not. Nothing casts shadows.
  */
 export default function Greenery({ stoneMap = null }) {
-  const built = useMemo(() => build(stoneMap), [stoneMap]);
+  const stone = useHouseStone(stoneMap);
+  const built = useMemo(() => build(stone), [stone]);
 
   useEffect(
     () => () => {

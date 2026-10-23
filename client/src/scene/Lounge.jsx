@@ -59,8 +59,8 @@ const BENCH_AT = -0.62; // the bench's centre, in front of the keys (piano frame
 const RUG = { x: -14.8, z: -0.45, length: 4.1, width: 2.9, fringe: 0.08, y: 0.012 };
 
 const SEAT_TOP = 0.45;
-const PELVIS_IN = 0.02; // the pelvis sits this far forward of the seat cushion's middle (furniture frame z)
-const STAND_OFF = { sofa: 0.82, chair: 0.85 }; // from pelvis to standing spot: clear of the seat by a capsule radius
+const PELVIS_IN = -0.02; // the pelvis, along the way the seat faces from the piece's middle: a little back, against the tufting
+const EXIT_AT = { sofa: 0.84, chair: 0.87 }; // standing spots (furniture frame z): clear of the seat by more than a capsule radius
 
 /** A point given in a piece's frame (x across, z forward), in world metres. */
 function toWorld(piece, lx, ly, lz) {
@@ -71,22 +71,22 @@ function toWorld(piece, lx, ly, lz) {
 
 const round = (p) => ({ x: +p.x.toFixed(3), y: +p.y.toFixed(3), z: +p.z.toFixed(3) });
 
-function seat(id, label, piece, lx, seatTop, standOff) {
+function seat(id, label, piece, lx, seatTop, exitAt) {
   const point = toWorld(piece, lx, seatTop, PELVIS_IN);
-  const exit = toWorld(piece, lx, 0, PELVIS_IN + standOff);
+  const exit = toWorld(piece, lx, 0, exitAt);
   return { id, label, point: round(point), yaw: piece.yaw, exit: round(exit) };
 }
 
-const BENCH = { ...toWorld(PIANO_AT, 0, 0, BENCH_AT), yaw: PIANO_AT.yaw };
+const BENCH = toWorld(PIANO_AT, 0, 0, BENCH_AT); // the piano bench's floor centre, in world metres
 
 /**
  * Where to sit in the lounge, in the same form as world/seats.js: two places on the sofa, 0.9 m apart, one in each
  * armchair, and the piano bench. The bench's standing spot is beside it (south), since the keyboard is in front.
  */
 export const LOUNGE_SEATS = [
-  seat('sofa-a', 'on the sofa', SOFA, -0.45, SEAT_TOP, STAND_OFF.sofa),
-  seat('sofa-b', 'on the sofa', SOFA, 0.45, SEAT_TOP, STAND_OFF.sofa),
-  ...CHAIRS.map((c) => seat(`armchair-${c.id}`, 'in the armchair', c, 0, SEAT_TOP, STAND_OFF.chair)),
+  seat('sofa-a', 'on the sofa', SOFA, -0.45, SEAT_TOP, EXIT_AT.sofa),
+  seat('sofa-b', 'on the sofa', SOFA, 0.45, SEAT_TOP, EXIT_AT.sofa),
+  ...CHAIRS.map((c) => seat(`armchair-${c.id}`, 'in the armchair', c, 0, SEAT_TOP, EXIT_AT.chair)),
   {
     id: 'piano',
     label: 'at the piano',
@@ -104,7 +104,7 @@ const CANDLES = [
   [0.05, -0.075, 0.033, 0.18],
   [-0.075, -0.05, 0.038, 0.125],
 ];
-const FLAME = { height: 0.042, width: 0.022 };
+const FLAME = { height: 0.05, width: 0.024 };
 const FLAME_COLOR = new Color('#ffb060').multiplyScalar(3); // above 1: the bloom pass catches it
 
 /** Everything static, built once: merged geometry per material, candle and flame placements, key instances. */
@@ -160,14 +160,15 @@ function makeMaterials() {
   return {
     rugMap,
     marbleMap,
-    rug: new MeshStandardMaterial({ map: rugMap, roughness: 0.95, metalness: 0, alphaTest: 0.5 }),
+    rug: new MeshStandardMaterial({ map: rugMap, color: '#d2cac2', roughness: 0.95, metalness: 0, alphaTest: 0.5 }), // wool soaks up light
     // Velvet: a soft sheen at grazing angles, which is what reads as pile.
     velvet: new MeshPhysicalMaterial({
       vertexColors: true,
-      roughness: 0.82,
+      roughness: 0.9,
       metalness: 0,
+      specularIntensity: 0.25, // pile scatters: almost no mirror highlight, which is what made it read as leather
       sheen: 1,
-      sheenColor: new Color('#3f9c78'),
+      sheenColor: new Color('#5cbf93'),
       sheenRoughness: 0.4,
     }),
     wood: new MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0 }),
@@ -177,10 +178,10 @@ function makeMaterials() {
     lacquer: new MeshPhysicalMaterial({ vertexColors: true, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.04 }),
     ivory: new MeshStandardMaterial({ color: '#f3eee2', roughness: 0.35, metalness: 0 }),
     ebony: new MeshPhysicalMaterial({ color: '#0d0d0e', roughness: 0.35, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.2 }),
-    wax: new MeshStandardMaterial({ color: '#f2e9d6', roughness: 0.55, metalness: 0, emissive: new Color('#ff9a48'), emissiveIntensity: 0.12 }),
+    wax: new MeshStandardMaterial({ color: '#d6c39c', roughness: 0.7, metalness: 0, emissive: new Color('#ff9a48'), emissiveIntensity: 0.05 }),
     flame: new MeshBasicMaterial({ color: FLAME_COLOR, vertexColors: true }),
     // Lit from inside: emissive only, no light of its own (the house keeps a fixed pool of three).
-    shade: new MeshStandardMaterial({ color: '#e9d4ad', roughness: 0.9, emissive: new Color('#ffbf78'), emissiveIntensity: 1.25, side: DoubleSide }),
+    shade: new MeshStandardMaterial({ color: '#d9b98a', roughness: 0.9, emissive: new Color('#ffad5c'), emissiveIntensity: 1.1, side: DoubleSide }),
   };
 }
 
@@ -259,7 +260,6 @@ export default function Lounge({ stoneMap = null }) {
   const sofaHalf = [SOFA.width / 2, 0.4, SOFA.depth / 2];
   const chairHalf = [CHAIR.width / 2, 0.4, CHAIR.depth / 2];
   const tableEnd = COFFEE.length / 2 - COFFEE.width / 2;
-  const bench = toWorld(PIANO_AT, 0, 0, BENCH_AT);
 
   return (
     <>
@@ -286,7 +286,7 @@ export default function Lounge({ stoneMap = null }) {
             />
           );
         })}
-        <CuboidCollider args={[BENCH_SIZE.width / 2, 0.25, BENCH_SIZE.depth / 2]} position={[bench.x, 0.25, bench.z]} rotation={[0, PIANO_AT.yaw, 0]} />
+        <CuboidCollider args={[BENCH_SIZE.width / 2, 0.25, BENCH_SIZE.depth / 2]} position={[BENCH.x, 0.25, BENCH.z]} rotation={[0, PIANO_AT.yaw, 0]} />
       </RigidBody>
 
       <mesh geometry={shapes.rug} material={mats.rug} position={[RUG.x, RUG.y, RUG.z]} receiveShadow />
