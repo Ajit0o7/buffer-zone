@@ -22,7 +22,7 @@ const ERRORS = {
   server_full: 'The house has no space left for photos right now.',
   too_large: 'That picture is too large even after shrinking.',
   unsupported_type: 'That picture format is not supported.',
-  network: 'Could not reach the house. Check your connection.',
+  network: 'Could not reach the house. Check your connection, and that the game server is running (restart it after updating).',
 };
 export const errorText = (code) => ERRORS[code] ?? 'Something went wrong. Try again.';
 

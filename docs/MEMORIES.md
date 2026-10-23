@@ -65,5 +65,8 @@ too (they are in memory as well). The client doesn't need to change.
   `MAX_MEMORIES` equal to `MAX_MEMORIES_PER_ROOM` in `server/src/rooms.js`. Frames snap onto the wall behind their
   anchor, so the anchor only has to be close.
 - **Size and quality:** `MAX_SIDE` in `gallery/memoryNet.js` (1600 px) and the server's `MAX_MEMORY_BYTES`.
-- **Another origin:** set `CLIENT_ORIGIN` on the server (comma-separated), as for the sockets: the upload route uses the
-  same list for CORS.
+- **Another origin:** with `CLIENT_ORIGIN` unset the server accepts pages from localhost and private network addresses
+  (so `http://192.168.x.x:5173` works too). For a deployment, set `CLIENT_ORIGIN` (comma-separated); the sockets and the
+  upload route use the same list for CORS.
+- **"Could not reach the house":** the upload never got an answer. Restart the server after updating (an older one
+  has no upload route), and make sure the page and server are on the same machine or `VITE_SERVER_URL` points at it.

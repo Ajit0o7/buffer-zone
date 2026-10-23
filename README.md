@@ -343,7 +343,7 @@ opened by one opens for the other. Software rendering here runs at about 1.4 fps
 
 Environment variables (see `client/.env.example`):
 - `client/.env.local`: `VITE_SERVER_URL=https://your-server.example.com`
-- server: `PORT`, `CLIENT_ORIGIN=https://your-site.example.com` (comma-separated for more than one)
+- server: `PORT`, `CLIENT_ORIGIN=https://your-site.example.com` (comma-separated for more than one; unset, the server accepts localhost and private-network pages, for development)
 
 ---
 

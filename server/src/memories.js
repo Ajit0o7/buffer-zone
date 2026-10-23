@@ -24,12 +24,10 @@ const STATUS_FOR = {
  * Returns a handler (req, res) => boolean: true if it handled the request, false if the URL isn't ours.
  * `announce(sockets, memory)` is called after a successful upload, to tell both players' sockets.
  */
-export function createMemoryRoutes({ store, origins, announce }) {
-  const allowed = new Set(origins);
-
+export function createMemoryRoutes({ store, originAllowed, announce }) {
   function cors(req, res) {
     const origin = req.headers.origin;
-    if (origin && allowed.has(origin)) {
+    if (origin && originAllowed(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
     }

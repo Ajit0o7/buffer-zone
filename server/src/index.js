@@ -2,10 +2,12 @@ import http from 'node:http';
 import { Server } from 'socket.io';
 import { createRoomStore } from './rooms.js';
 import { createMemoryRoutes } from './memories.js';
+import { createOriginCheck, parseOrigins } from './origins.js';
 import { normalizeKey, sanitizeCurtain, sanitizeEmote, sanitizeState, sanitizeTogether, sanitizeVoiceSignal } from './validate.js';
 
 const PORT = Number(process.env.PORT) || 3001;
-const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173').split(',').map((o) => o.trim());
+const CLIENT_ORIGINS = parseOrigins(process.env.CLIENT_ORIGIN); // null: development default (see origins.js)
+const originAllowed = createOriginCheck(CLIENT_ORIGINS);
 
 const FANOUT_HZ = 20; // server -> partner snapshot rate
 const MIN_UPDATE_MS = 15; // inbound cap per socket (~66 Hz); excess packets are dropped
@@ -23,7 +25,7 @@ const store = createRoomStore();
 
 const memoryRoutes = createMemoryRoutes({
   store,
-  origins: CLIENT_ORIGINS,
+  originAllowed,
   announce: (sockets, memory) => {
     for (const id of sockets) io.to(id).emit('gallery:memory', memory);
   },
@@ -37,7 +39,7 @@ const httpServer = http.createServer(async (req, res) => {
 });
 
 const io = new Server(httpServer, {
-  cors: { origin: CLIENT_ORIGINS },
+  cors: { origin: (origin, callback) => callback(null, !origin || originAllowed(origin)) },
   maxHttpBufferSize: 16 * 1024,
   pingInterval: 10_000,
   pingTimeout: 5_000,
@@ -178,7 +180,7 @@ const fanout = setInterval(() => {
 }, 1000 / FANOUT_HZ);
 
 httpServer.listen(PORT, () => {
-  console.log(`[server] listening on :${PORT} (origins: ${CLIENT_ORIGINS.join(', ')})`);
+  console.log(`[server] listening on :${PORT} (origins: ${CLIENT_ORIGINS ? CLIENT_ORIGINS.join(', ') : 'localhost and private network addresses'})`);
 });
 
 // Stop cleanly on deploy: close sockets so clients reconnect and resume their seats.

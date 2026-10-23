@@ -1,3 +1,4 @@
+import { createOriginCheck } from '../src/origins.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -101,7 +102,7 @@ test('memories: at most six uploads a minute', () => {
 async function withServer(fn) {
   const store = createRoomStore();
   const announced = [];
-  const handle = createMemoryRoutes({ store, origins: ['http://localhost:5173'], announce: (sockets, memory) => announced.push({ sockets, memory }) });
+  const handle = createMemoryRoutes({ store, originAllowed: createOriginCheck(['http://localhost:5173']), announce: (sockets, memory) => announced.push({ sockets, memory }) });
   const server = http.createServer(async (req, res) => {
     if (!(await handle(req, res))) res.writeHead(404).end();
   });
@@ -168,4 +169,13 @@ test('emotes and walk-together messages are whitelisted: nothing free-form reach
 test('a seated player is relayed as sitting; unknown animations still fall back to idle', () => {
   assert.equal(sanitizeState({ p: [1, 2, 3], r: 0, a: 'sit', v: 0 }).a, 'sit');
   assert.equal(sanitizeState({ p: [1, 2, 3], r: 0, a: 'fly', v: 0 }).a, 'idle');
+});
+
+test('origins: the development default accepts localhost and private addresses only', () => {
+  const ok = createOriginCheck(null);
+  for (const o of ['http://localhost:5173', 'http://127.0.0.1:4000', 'http://192.168.1.20:5173', 'http://10.0.0.5:5173', 'http://172.20.1.1:5173', 'http://my-pc.local:5173']) assert.equal(ok(o), true, o);
+  for (const o of ['https://evil.example.com', 'http://192.169.1.1', 'http://172.32.0.1', 'null', 'file://x']) assert.equal(ok(o), false, o);
+  const listed = createOriginCheck(['https://site.example.com']);
+  assert.equal(listed('https://site.example.com'), true);
+  assert.equal(listed('http://localhost:5173'), false);
 });
