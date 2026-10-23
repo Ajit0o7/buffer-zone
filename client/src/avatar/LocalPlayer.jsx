@@ -169,6 +169,7 @@ export default function LocalPlayer({ avatarId }) {
     let y = t.y;
     let z = t.z;
     let speed = 0;
+    let stoodNow = false;
 
     // ---- Sitting: E sits at the seat in front of you, or stands up again.
     const pressed = couple.sitPressed;
@@ -212,6 +213,7 @@ export default function LocalPlayer({ avatarId }) {
         motion.grounded = false;
         b.setNextKinematicTranslation({ x, y, z });
         store.setSeated(false);
+        stoodNow = true;
         localMotion.anim = 'idle';
         localMotion.speed = 0;
       }
@@ -229,6 +231,9 @@ export default function LocalPlayer({ avatarId }) {
       localMotion.yaw = dampAngle(localMotion.yaw, sit.seat.yaw, 8, dt);
       localMotion.speed = 0;
       localMotion.anim = 'sit';
+      localMotion.position.set(x, y, z);
+    } else if (stoodNow) {
+      // Just stood up: the body is moving to the standing spot this step, so the controller has nothing to do yet.
       localMotion.position.set(x, y, z);
     } else {
       // ---- Walking. Input is relative to where the camera looks; photo mode freezes the player.
