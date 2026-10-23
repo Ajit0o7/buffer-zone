@@ -21,7 +21,7 @@ import { NO_REFLECT } from '../world/layers';
 import Reactions from './Reactions';
 import PhotoCapture from '../photo/PhotoCapture';
 import VisibilityBake from '../world/VisibilityBake';
-import Loading from './Loading';
+import Loading, { SceneReady } from './Loading';
 import './loaders'; // sets the local Draco decoder path before any model loads
 
 // Development only (stripped from production builds): exposes the renderer for tests and the console.
@@ -91,6 +91,7 @@ export default function GameScene() {
             <VisibilityBake />
           </Physics>
           <SpatialAudio />
+          <SceneReady />
         </Suspense>
       </Canvas>
       <Loading />
