@@ -70,6 +70,7 @@ export function createRoomStore({ ttlMs = EMPTY_ROOM_TTL_MS } = {}) {
         keyHash: sha256(key),
         slots: { host: newSlot(), guest: newSlot() },
         curtains: new Map(), // painting id -> true (held open) | false (held closed)
+        game: null, // the game the two are playing, if any (games.js)
         memories: new Map(), // id -> { id, spot, caption, date, type, bytes: Buffer }
         uploads: [], // timestamps of recent uploads, for the rate limit
         cleanupTimer: null,
@@ -165,6 +166,15 @@ export function createRoomStore({ ttlMs = EMPTY_ROOM_TTL_MS } = {}) {
     },
 
     /** The other player's socket id, if they are connected: where voice signalling goes. */
+    /** The room's game and this player's place in it: { room, role, players: [{ role, socketId }] }, or null. */
+    gameContext(socketId) {
+      const link = linkBySocket.get(socketId);
+      if (!link) return null;
+      const room = rooms.get(link.roomId);
+      const players = ['host', 'guest'].filter((r) => room.slots[r].connected).map((r) => ({ role: r, socketId: room.slots[r].socketId }));
+      return { room, role: link.role, players };
+    },
+
     peerSocketId(socketId) {
       const link = linkBySocket.get(socketId);
       if (!link) return null;

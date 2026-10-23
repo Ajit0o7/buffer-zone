@@ -119,6 +119,9 @@ Single Node process, in-memory rooms (`server/src/rooms.js`).
 | HTTP | `POST /api/rooms/:room/memories` | image bytes | Upload, authorised by the room token (1.5 MB max); `X-Spots` lists the curtains nearest the player |
 | both | `emote` | `{ id }` | wave, kiss, heart, cheer, clap, laugh, relayed to the partner (burst 6, 2/s, shared with `together`) |
 | both | `together` | `{ kind }` | Walk together: `request`, `accept`, `end` |
+| C→S | `game:start` / `game:end` | `{ kind }` / — | Start Heart Hunt (`hunt`) or the quiz (`quiz`), or stop |
+| C→S | `game:hunt-collect`, `game:quiz-answer`, `game:quiz-next` | `{ spot }`, `{ choice }`, — | Game moves (burst 10, 4/s) |
+| S→C | `game:state` | the player's own view of the game | After every move, and on join and resume |
 | HTTP | `GET /api/rooms/:room/memories/:id` | — | The image, addressed by an unguessable id |
 
 Bandwidth: about 60 bytes × 20 Hz × 2 directions ≈ 2.4 KB/s per player. Latency is one network RTT plus
@@ -180,8 +183,8 @@ The tier is chosen by `PerfGovernor` from the measured frame rate (target min(re
 - **Voice chat:** press V. Peer-to-peer WebRTC, positioned and dulled with distance ([docs/VOICE.md](docs/VOICE.md)).
 - **Add memory:** upload your own photos onto the curtain you're standing at, live, for both of you
   ([docs/MEMORIES.md](docs/MEMORIES.md)).
-- **Together:** emotes (1–6), sitting (E), walking hand in hand (H) and a polaroid photo mode (C); keys and details in
-  [docs/COUPLE.md](docs/COUPLE.md).
+- **Together:** emotes (1–6), sitting (E), walking hand in hand (H), a polaroid photo mode (C), and games (G): Heart
+  Hunt and "How well do you know me?"; keys and details in [docs/COUPLE.md](docs/COUPLE.md).
 - **Invite link:** the host's key card has a **Copy invite link** button; opening `…/#room=KEY` joins the room with no typing.
   The key is in the URL fragment, which browsers never send to a server.
 - **Autoplay:** the Create/Join click in the lobby calls `AudioContext.resume()`. Music starts as soon as it has loaded, and on

@@ -17,6 +17,7 @@ import Greenery from './Greenery';
 import Fountain from './Fountain';
 import OutOfReflections from './OutOfReflections';
 import GroundShadows from './GroundShadows';
+import HuntHearts from './HuntHearts';
 import { NO_REFLECT } from '../world/layers';
 import Reactions from './Reactions';
 import PhotoCapture from '../photo/PhotoCapture';
@@ -83,6 +84,7 @@ export default function GameScene() {
               <Greenery />
             </OutOfReflections>
             <GroundShadows />
+            <HuntHearts />
             <LocalPlayer avatarId={localAvatar} />
             <RemotePlayer avatarId={remoteAvatar} />
             {/* Inside Physics: each frame snaps itself onto the nearest wall with a physics ray. */}

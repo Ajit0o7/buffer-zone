@@ -3,7 +3,8 @@ import { Server } from 'socket.io';
 import { createRoomStore } from './rooms.js';
 import { createMemoryRoutes } from './memories.js';
 import { createOriginCheck, parseOrigins } from './origins.js';
-import { normalizeKey, sanitizeCurtain, sanitizeEmote, sanitizeState, sanitizeTogether, sanitizeVoiceSignal } from './validate.js';
+import { GAME_KINDS, HUNT, QUIZ, huntCollect, quizAnswer, quizNext, startGame, viewFor } from './games.js';
+import { normalizeKey, sanitizeCurtain, sanitizeEmote, sanitizeGameStart, sanitizeIndex, sanitizeState, sanitizeTogether, sanitizeVoiceSignal } from './validate.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 const CLIENT_ORIGINS = parseOrigins(process.env.CLIENT_ORIGIN); // null: development default (see origins.js)
@@ -57,6 +58,7 @@ const lastUpdateAt = new Map();
 const curtainBuckets = new Map(); // socket.id -> { tokens, at }
 const voiceBuckets = new Map();
 const coupleBuckets = new Map(); // emotes and walk-together messages share a small budget per socket
+const gameBuckets = new Map(); // game moves: human-paced, a few a second
 
 function takeToken(buckets, burst, refillPerMs, socketId, now) {
   const bucket = buckets.get(socketId) ?? { tokens: burst, at: now };
@@ -76,6 +78,13 @@ const takeCoupleToken = (socketId, now) => takeToken(coupleBuckets, 6, 2 / 1000,
 const sendGalleryState = (socket) => {
   socket.emit('gallery:state', store.curtainSnapshot(socket.id));
   socket.emit('gallery:memories', store.memoryList(socket.id));
+  const ctx = store.gameContext(socket.id);
+  socket.emit('game:state', ctx ? viewFor(ctx.room.game, ctx.role) : null);
+};
+
+/** Sends each connected player their own view of the room's game (the quiz hides the partner's pick). */
+const broadcastGame = (ctx) => {
+  for (const { role, socketId } of ctx.players) io.to(socketId).emit('game:state', viewFor(ctx.room.game, role));
 };
 
 io.on('connection', (socket) => {
@@ -158,6 +167,33 @@ io.on('connection', (socket) => {
     if (peerSocketId) io.to(peerSocketId).emit('together', message);
   });
 
+  // Games (games.js): start one, play it, end it. The server keeps the state and tells both players.
+  const gameMove = (handler) => (payload) => {
+    if (!takeToken(gameBuckets, 10, 4 / 1000, socket.id, Date.now())) return;
+    const ctx = store.gameContext(socket.id);
+    if (ctx && handler(ctx, payload)) broadcastGame(ctx);
+  };
+  socket.on('game:start', gameMove((ctx, payload) => {
+    const start = sanitizeGameStart(payload, GAME_KINDS);
+    if (!start) return false;
+    ctx.room.game = startGame(start.kind);
+    return true;
+  }));
+  socket.on('game:end', gameMove((ctx) => {
+    if (!ctx.room.game) return false;
+    ctx.room.game = null;
+    return true;
+  }));
+  socket.on('game:hunt-collect', gameMove((ctx, payload) => {
+    const spot = sanitizeIndex(payload?.spot, HUNT.spots);
+    return spot !== null && huntCollect(ctx.room.game, ctx.role, spot);
+  }));
+  socket.on('game:quiz-answer', gameMove((ctx, payload) => {
+    const choice = sanitizeIndex(payload?.choice, QUIZ.choices);
+    return choice !== null && quizAnswer(ctx.room.game, ctx.role, choice);
+  }));
+  socket.on('game:quiz-next', gameMove((ctx) => quizNext(ctx.room.game)));
+
   // High-frequency path: fire-and-forget, no ack, volatile so stale packets are never queued.
   socket.on('player:update', (payload) => {
     const now = Date.now();
@@ -174,6 +210,7 @@ io.on('connection', (socket) => {
     curtainBuckets.delete(socket.id);
     voiceBuckets.delete(socket.id);
     coupleBuckets.delete(socket.id);
+    gameBuckets.delete(socket.id);
     const detached = store.detach(socket.id);
     if (detached?.peerSocketId) io.to(detached.peerSocketId).emit('room:peer', { connected: false });
   });

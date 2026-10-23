@@ -132,3 +132,15 @@ export function sanitizeEmote(payload) {
 export function sanitizeTogether(payload) {
   return TOGETHER_KINDS.has(payload?.kind) ? { kind: payload.kind } : null;
 }
+
+// ---- Games ---------------------------------------------------------------------------------------------------------
+
+/** { kind: 'hunt' | 'quiz' }. */
+export function sanitizeGameStart(payload, kinds) {
+  return kinds.has(payload?.kind) ? { kind: payload.kind } : null;
+}
+
+/** A whole number in [0, below). Returns null otherwise. */
+export function sanitizeIndex(value, below) {
+  return Number.isInteger(value) && value >= 0 && value < below ? value : null;
+}

@@ -11,6 +11,7 @@ Everything two people do together in the house: emotes, sitting, walking hand in
 | **E** | Sit on the seat in front of you (stair, benches, sofa, armchairs, piano bench); **E** or a move key stands up |
 | **H** | Ask your partner to walk together; **H** on their side says yes; **H** again lets go |
 | **C** | Photo mode: **Space** takes the picture, **C** goes back |
+| **G** | Games: Heart Hunt, How well do you know me? |
 | V / M | Microphone / Add a memory (see VOICE.md, MEMORIES.md) |
 
 The emotes, Together and Photo are also buttons on the left-hand rail, and the microphone and Add memory on the right
@@ -47,3 +48,19 @@ C hides the HUD and orbits the camera round the midpoint of the two of you (mous
 depth of field focused there. The view renders at your screen's full pixel density, and the shutter takes the
 picture at 2.5×. It comes out as a square vintage instant print (warm, faded, vignetted, with a caption of the room
 and the date; `photo/polaroid.js`) that you can download.
+
+## Games (G)
+
+The server keeps each room's game (`server/src/games.js`), so both of you always see the same thing and a reconnect
+picks it up again.
+
+**Heart Hunt.** Ten golden hearts are hidden around the house, picked from 24 places (`client/src/games/hunt.js`):
+the courtyard, the lounge's corners, both aisles, the salon by the hearth, halfway up the grand stair, the landing,
+the bridge and both upper galleries. Walk into one to collect it; it pops with a chime for both of you. The bar at the
+top shows how many are left, who found what, the time and a hint ("very close…"). Find the last one and a card shows
+your time together. It works alone too.
+
+**How well do you know me?** Eight questions (from 32 in `client/src/games/quiz.js`). Each round is about one of
+you: they answer honestly about themselves, the other guesses. The server keeps the answer secret until both have
+picked, then reveals both. Turns alternate; at the end you get your score and a verdict. Answer with the mouse or
+keys 1–4.

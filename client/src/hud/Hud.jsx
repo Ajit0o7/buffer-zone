@@ -7,7 +7,9 @@ import MemoryModal from './MemoryModal';
 import Toolbar from './Toolbar';
 import CoupleControls from './CoupleControls';
 import PhotoMode from './PhotoMode';
+import GamesHud from './GamesHud';
 import { useCouple } from '../world/couple';
+import { useGames } from '../state/games';
 import { ROOM_BY_ID } from '../world/rooms';
 import { inviteLink } from '../lobby/invite';
 
@@ -48,6 +50,7 @@ export default function Hud() {
   }, []);
 
   const photoMode = useCouple((s) => s.photoMode);
+  const quizOn = useGames((s) => s.game?.kind === 'quiz'); // the quiz panel takes the middle of the screen
   const role = useSession((s) => s.role);
   const roomKey = useSession((s) => s.key);
   const peerConnected = useSession((s) => s.peerConnected);
@@ -98,13 +101,14 @@ export default function Hud() {
 
       <Toolbar onAddMemory={openForm} />
       <CoupleControls disabled={adding} />
+      <GamesHud />
       {notice && <p className="toast" role="status">{notice.text}</p>}
       {adding && <MemoryModal onClose={() => setAdding(false)} />}
 
       <p className={`room-name${showRoom ? ' visible' : ''}`}>{ROOM_BY_ID[room]?.name}</p>
 
       {/* Stays in the DOM while fading out, so the text doesn't vanish mid-transition */}
-      <figure className={`caption${photo ? ' visible' : ''}`}>
+      <figure className={`caption${photo && !quizOn ? ' visible' : ''}`}>
         {photo && (
           <>
             <span className="category">{CATEGORIES[photo.category]} · {ROOM_BY_ID[photo.room]?.name}</span>

@@ -3,6 +3,7 @@ import { useCouple, couple, togglePhotoMode } from '../world/couple';
 import { useSession } from '../state/session';
 import { EMOTE_IDS, EMOTES } from '../avatar/emotes';
 import { sendEmote, toggleTogether } from '../net/coupleNet';
+import { useGames } from '../state/games';
 
 const EMOTE_ICON = { wave: '👋', kiss: '💋', heart: '❤️', cheer: '🎉', clap: '👏', laugh: '😄' };
 
@@ -19,6 +20,7 @@ export default function CoupleControls({ disabled }) {
     const onKey = (e) => {
       if (disabled || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.target.closest?.('input, textarea, select')) return;
+      if (useGames.getState().game?.kind === 'quiz' && /^Digit[1-4]$/.test(e.code)) return; // the quiz's answer keys
       const emote = EMOTE_IDS.find((id) => e.code === `Digit${EMOTES[id].key}` || e.code === `Numpad${EMOTES[id].key}`);
       if (emote) sendEmote(emote);
       else if (e.code === 'KeyE') couple.sitPressed = true;
@@ -75,6 +77,19 @@ export default function CoupleControls({ disabled }) {
         >
           <span aria-hidden="true">🤝</span>
           <kbd>H</kbd>
+        </button>
+        <button
+          type="button"
+          className="rail-btn"
+          onClick={() => {
+            useGames.getState().setMenuOpen(!useGames.getState().menuOpen);
+            document.exitPointerLock?.();
+          }}
+          data-label="Games to play together"
+          aria-label="Games (G)"
+        >
+          <span aria-hidden="true">🎲</span>
+          <kbd>G</kbd>
         </button>
         <button type="button" className="rail-btn" onClick={togglePhotoMode} data-label="Photo mode" aria-label="Photo mode (C)">
           <span aria-hidden="true">📷</span>
