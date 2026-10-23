@@ -25,6 +25,10 @@ export const STAIR_START = LANDING.west - (RISERS - 1) * RUN; // x of the first 
 const DOWN_RISERS = Math.round((LANDING.top - BRIDGE_Y) / TARGET_RISE); // 7, onto the bridge
 const DOWN_RISE = (LANDING.top - BRIDGE_Y) / DOWN_RISERS;
 const RAIL_HEIGHT = 0.95; // handrail height above the treads
+// The flight's dimensions, for seats and anything else placed on the steps.
+export const FLIGHT = { run: RUN, rise: RISE, risers: RISERS, halfWidth: HALF_WIDTH };
+/** The top of step k (0 is the lowest): its centre's x, and its height. */
+export const stepTop = (k) => ({ x: STAIR_START + (k + 0.5) * RUN, y: (k + 1) * RISE });
 export const NEWEL = { x: -0.25, z: HALF_WIDTH, height: 1.15 }; // the lanterns at the foot sit on these
 
 // Tints. Stone parts are multiplied by the house's own floor texture (see stone.js); the carpet,

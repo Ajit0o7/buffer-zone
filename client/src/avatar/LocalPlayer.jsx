@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { CapsuleCollider, RigidBody, useRapier } from '@react-three/rapier';
-import { Vector3 } from 'three';
+import { MathUtils, Vector3 } from 'three';
 import Avatar from './Avatar';
 import { useKeys } from '../input/useKeys';
 import { socket } from '../net/socket';
@@ -10,6 +10,9 @@ import { ACCELERATION, CAMERA, CAPSULE, DECELERATION, GRAVITY, RUN_SPEED, SEND_H
 import { partner } from '../gallery/curtainState';
 import { localMotion } from '../world/shared';
 import { dampAngle } from '../utils/math';
+import { couple, sitFits, useCouple } from '../world/couple';
+import { nearestSeat, SEATS } from '../world/seats';
+import { endTogether } from '../net/coupleNet';
 
 const UP = new Vector3(0, 1, 0);
 
@@ -30,12 +33,44 @@ const FELL_OUT_Y = -30; // safety net: respawn if the player ever leaves the map
 
 const SEND_INTERVAL = 1 / SEND_HZ;
 
+// Sitting: how long the walk to the seat takes, and how far above the seat the pelvis rests.
+const SIT_SECONDS = 0.7;
+const PELVIS_ABOVE_SEAT = 0.07;
+const FALLBACK_FIT = { x: 0, y: 0.52, z: -0.05 }; // a seated pelvis, for a model that hasn't measured its own yet
+
+// Walking together: the guest keeps to the host's right-hand side, close enough to hold hands.
+const TOGETHER_OFFSET = 0.78;
+const FOLLOW_GAIN = 3.2; // 1/s: how hard the guest closes a gap
+const FOLLOW_MAX_SPEED = 6.5; // m/s: a gap closes at about a run
+const TELEPORT_DISTANCE = 6; // further than this (a lift off the stair, a respawn), the guest is simply brought along
+const STUCK_SECONDS = 2.5;
+
+// Photo mode's camera orbit limits.
+const PHOTO_PITCH = [-0.25, 1.2];
+const PHOTO_DISTANCE = [1.4, 9];
+
 // Scratch vectors, reused every frame so the render loop allocates nothing.
 const moveDir = new Vector3();
 const groundNormal = new Vector3(0, 1, 0);
 const camGoal = new Vector3();
 const lookAt = new Vector3();
 const toCamera = new Vector3();
+const desired = new Vector3();
+const seatBody = new Vector3();
+
+const smooth = (t) => t * t * (3 - 2 * t);
+
+/** The capsule centre that puts an avatar's pelvis on a seat: its origin sits where the measured pelvis offset says. */
+function seatCentre(seat, fit, out) {
+  const f = fit ?? FALLBACK_FIT;
+  const c = Math.cos(seat.yaw);
+  const sn = Math.sin(seat.yaw);
+  return out.set(
+    seat.point.x - (f.x * c + f.z * sn),
+    seat.point.y + PELVIS_ABOVE_SEAT - f.y + CAPSULE.center,
+    seat.point.z - (-f.x * sn + f.z * c),
+  );
+}
 
 /**
  * The local player: a kinematic capsule driven by Rapier's character controller, plus a
@@ -56,6 +91,11 @@ export default function LocalPlayer({ avatarId }) {
   const cameraYaw = useRef(-Math.PI / 2);
   const sendTimer = useRef(0);
   const motion = useRef({ velocity: new Vector3(), verticalSpeed: 0, grounded: false }).current;
+  // Sitting: the seat I'm on (or null), how far into getting there, and where I started from.
+  const sit = useRef({ seat: null, t: 1, from: new Vector3(), armed: false, promptId: null }).current;
+  const follow = useRef({ stuck: 0 }).current;
+  // Walking together, the host leads with their right hand: the guest holds with their left, and the other way round.
+  const hold = useMemo(() => ({ active: false, side: role === 'host' ? 'Right' : 'Left', other: partner.position }), [role]);
 
   useEffect(() => {
     const c = world.createCharacterController(SKIN);
@@ -79,23 +119,38 @@ export default function LocalPlayer({ avatarId }) {
       if (yaw !== undefined) cameraYaw.current = yaw;
     };
     window.__localMotion = localMotion;
+    window.__couple = { couple, store: useCouple, sit, partner, seats: SEATS, sitFits };
     return () => {
       delete window.__teleport;
       delete window.__localMotion;
+      delete window.__couple;
     };
-  }, []);
+  }, [sit]);
 
   // Pointer-lock mouse look. Only active once the canvas has been clicked.
   useEffect(() => {
     const el = gl.domElement;
     const requestLock = () => el.requestPointerLock();
     const onMouseMove = (event) => {
-      if (document.pointerLockElement === el) cameraYaw.current -= event.movementX * 0.0025;
+      if (document.pointerLockElement !== el) return;
+      if (couple.photo.on) {
+        // Photo mode: the mouse swings the camera around the two of you.
+        couple.photo.yaw -= event.movementX * 0.003;
+        couple.photo.pitch = MathUtils.clamp(couple.photo.pitch + event.movementY * 0.003, PHOTO_PITCH[0], PHOTO_PITCH[1]);
+      } else {
+        cameraYaw.current -= event.movementX * 0.0025;
+      }
+    };
+    const onWheel = (event) => {
+      if (!couple.photo.on) return;
+      couple.photo.distance = MathUtils.clamp(couple.photo.distance * Math.exp(event.deltaY * 0.001), PHOTO_DISTANCE[0], PHOTO_DISTANCE[1]);
     };
     el.addEventListener('click', requestLock);
+    el.addEventListener('wheel', onWheel, { passive: true });
     document.addEventListener('mousemove', onMouseMove);
     return () => {
       el.removeEventListener('click', requestLock);
+      el.removeEventListener('wheel', onWheel);
       document.removeEventListener('mousemove', onMouseMove);
     };
   }, [gl]);
@@ -106,76 +161,200 @@ export default function LocalPlayer({ avatarId }) {
     const col = collider.current;
     if (!b || !c || !col) return;
     const dt = Math.min(rawDt, MAX_DT);
+    const store = useCouple.getState();
+    hold.active = couple.togetherOn;
+    const photo = couple.photo.on;
+    const t = b.translation();
+    let x = t.x;
+    let y = t.y;
+    let z = t.z;
+    let speed = 0;
 
-    // Input, relative to where the camera looks.
+    // ---- Sitting: E sits at the seat in front of you, or stands up again.
+    const pressed = couple.sitPressed;
+    couple.sitPressed = false;
     const { forward, back, left, right, run } = keys.current;
-    moveDir.set(Number(right) - Number(left), 0, Number(back) - Number(forward));
-    const moving = moveDir.lengthSq() > 0;
-    if (moving) moveDir.normalize().applyAxisAngle(UP, cameraYaw.current);
-    const targetSpeed = moving ? (run ? RUN_SPEED : WALK_SPEED) : 0;
+    const anyMove = forward || back || left || right;
 
-    // Tuned damping: ease toward the target velocity, a little faster when stopping.
-    const k = 1 - Math.exp(-(moving ? ACCELERATION : DECELERATION) * dt);
-    motion.velocity.x += (moveDir.x * targetSpeed - motion.velocity.x) * k;
-    motion.velocity.z += (moveDir.z * targetSpeed - motion.velocity.z) * k;
-    motion.verticalSpeed = motion.grounded
-      ? GROUND_STICK
-      : Math.max(motion.verticalSpeed - GRAVITY * dt, -MAX_FALL_SPEED);
-
-    // On the ground, aim the move along the ground's own slope (keeping its horizontal speed), so the
-    // controller doesn't shorten a push into a ramp: the stair climbs at full walking pace.
-    const alongSlope = motion.grounded
-      ? -(groundNormal.x * motion.velocity.x + groundNormal.z * motion.velocity.z) / groundNormal.y
-      : 0;
-
-    // Let the controller resolve walls, steps, slopes and the ground.
-    c.computeColliderMovement(col, {
-      x: motion.velocity.x * dt,
-      y: (motion.verticalSpeed + alongSlope) * dt,
-      z: motion.velocity.z * dt,
-    });
-    const m = c.computedMovement();
-    motion.grounded = c.computedGrounded();
-    // Against a wall, what actually happened becomes the velocity, so sliding along it doesn't keep
-    // pushing into it. Slopes and the stair don't count: feeding their (shorter) horizontal movement
-    // back in would slow the player a little more every frame, down to a crawl on the grand stair.
-    groundNormal.set(0, 1, 0);
-    for (let i = 0; i < c.numComputedCollisions(); i++) {
-      const hit = c.computedCollision(i);
-      if (!hit) continue;
-      const n = hit.normal1;
-      if (Math.abs(n.y) < WALL_NORMAL_Y) {
-        motion.velocity.x = m.x / dt;
-        motion.velocity.z = m.z / dt;
-      } else if (Math.abs(n.y) < groundNormal.y) {
-        groundNormal.set(n.x, n.y, n.z).multiplyScalar(Math.sign(n.y)); // the slope underfoot, pointing up
+    if (!sit.seat) {
+      // Look for a seat within reach, and offer it. A seat my partner is on is taken.
+      let offer = null;
+      if (!photo && localMotion.speed < 4 && !couple.photo.on) {
+        offer = nearestSeat(localMotion.position, (seat) =>
+          partner.known && partner.sitting && Math.hypot(partner.position.x - seat.point.x, partner.position.z - seat.point.z) < 0.5);
+      }
+      const offerId = offer?.id ?? null;
+      if (offerId !== sit.promptId) {
+        sit.promptId = offerId;
+        store.setSeatPrompt(offer ? { id: offer.id, label: offer.label } : null);
+      }
+      if (pressed && offer) {
+        sit.seat = offer;
+        sit.t = 0;
+        sit.armed = false;
+        sit.from.set(x, y, z);
+        motion.velocity.set(0, 0, 0);
+        store.setSeated(true);
+        store.setSeatPrompt(null);
+        sit.promptId = null;
+        endTogether(); // one of you sitting down ends the walk
+      }
+    } else {
+      if (!anyMove) sit.armed = true; // the walking key that brought me here must be let go of first
+      if (pressed || (sit.armed && sit.t >= 1 && anyMove)) {
+        const exit = sit.seat.exit;
+        sit.seat = null;
+        x = exit.x;
+        y = exit.y + CAPSULE.center + 0.05;
+        z = exit.z;
+        motion.velocity.set(0, 0, 0);
+        motion.verticalSpeed = 0;
+        motion.grounded = false;
+        b.setNextKinematicTranslation({ x, y, z });
+        store.setSeated(false);
+        localMotion.anim = 'idle';
+        localMotion.speed = 0;
       }
     }
 
-    const t = b.translation();
-    let x = t.x + m.x;
-    let y = t.y + m.y;
-    let z = t.z + m.z;
-    if (y < FELL_OUT_Y) {
-      [x, y, z] = spawn;
-      motion.velocity.set(0, 0, 0);
-      motion.verticalSpeed = 0;
+    if (sit.seat) {
+      // Seated: no walking. Glide onto the seat, turn to face the way it faces, and stay.
+      sit.t = Math.min(1, sit.t + dt / SIT_SECONDS);
+      const e = smooth(sit.t);
+      seatCentre(sit.seat, sitFits[avatarId], seatBody);
+      x = sit.from.x + (seatBody.x - sit.from.x) * e;
+      z = sit.from.z + (seatBody.z - sit.from.z) * e;
+      y = sit.from.y + (seatBody.y - sit.from.y) * e + Math.sin(Math.PI * e) * 0.06;
+      b.setNextKinematicTranslation({ x, y, z });
+      localMotion.yaw = dampAngle(localMotion.yaw, sit.seat.yaw, 8, dt);
+      localMotion.speed = 0;
+      localMotion.anim = 'sit';
+      localMotion.position.set(x, y, z);
+    } else {
+      // ---- Walking. Input is relative to where the camera looks; photo mode freezes the player.
+      const togetherNow = couple.togetherOn;
+      const followLeader = togetherNow && role === 'guest' && partner.known;
+      let moving;
+      let targetSpeed = 0;
+      let teleported = false;
+
+      if (followLeader) {
+        // The guest walks beside the host, at their right: wherever the host goes, the guest goes too.
+        const sy = Math.sin(partner.yaw);
+        const cy = Math.cos(partner.yaw);
+        const goalX = partner.position.x - cy * TOGETHER_OFFSET;
+        const goalZ = partner.position.z + sy * TOGETHER_OFFSET;
+        const gapX = goalX - x;
+        const gapZ = goalZ - z;
+        const gap = Math.hypot(gapX, gapZ);
+        desired.set(sy * partner.speed + gapX * FOLLOW_GAIN, 0, cy * partner.speed + gapZ * FOLLOW_GAIN);
+        if (desired.length() > FOLLOW_MAX_SPEED) desired.setLength(FOLLOW_MAX_SPEED);
+        if (gap < 0.06 && partner.speed < 0.1) desired.set(0, 0, 0);
+        moving = desired.lengthSq() > 0.0025;
+        follow.stuck = gap > 1.6 && Math.hypot(motion.velocity.x, motion.velocity.z) < 0.3 ? follow.stuck + dt : 0;
+        if (gap > TELEPORT_DISTANCE || follow.stuck > STUCK_SECONDS) {
+          follow.stuck = 0;
+          x = goalX;
+          y = partner.position.y;
+          z = goalZ;
+          motion.velocity.set(0, 0, 0);
+          motion.verticalSpeed = 0;
+          b.setNextKinematicTranslation({ x, y, z });
+          teleported = true;
+        }
+        // Standing still beside the host, face the way they face.
+        if (!moving && gap < 0.4) localMotion.yaw = dampAngle(localMotion.yaw, partner.yaw, 4, dt);
+      } else {
+        moveDir.set(Number(right) - Number(left), 0, Number(back) - Number(forward));
+        moving = !photo && moveDir.lengthSq() > 0;
+        if (moving) moveDir.normalize().applyAxisAngle(UP, cameraYaw.current);
+        // Hand in hand is a stroll: no running.
+        targetSpeed = moving ? (run && !togetherNow ? RUN_SPEED : WALK_SPEED) : 0;
+        desired.copy(moveDir).multiplyScalar(moving ? targetSpeed : 0);
+      }
+
+      if (!teleported) {
+        // Tuned damping: ease toward the target velocity, a little faster when stopping.
+        const k = 1 - Math.exp(-(moving ? ACCELERATION : DECELERATION) * dt);
+        motion.velocity.x += (desired.x - motion.velocity.x) * k;
+        motion.velocity.z += (desired.z - motion.velocity.z) * k;
+        motion.verticalSpeed = motion.grounded
+          ? GROUND_STICK
+          : Math.max(motion.verticalSpeed - GRAVITY * dt, -MAX_FALL_SPEED);
+
+        // On the ground, aim the move along the ground's own slope (keeping its horizontal speed), so the
+        // controller doesn't shorten a push into a ramp: the stair climbs at full walking pace.
+        const alongSlope = motion.grounded
+          ? -(groundNormal.x * motion.velocity.x + groundNormal.z * motion.velocity.z) / groundNormal.y
+          : 0;
+
+        // Let the controller resolve walls, steps, slopes and the ground.
+        c.computeColliderMovement(col, {
+          x: motion.velocity.x * dt,
+          y: (motion.verticalSpeed + alongSlope) * dt,
+          z: motion.velocity.z * dt,
+        });
+        const m = c.computedMovement();
+        motion.grounded = c.computedGrounded();
+        // Against a wall, what actually happened becomes the velocity, so sliding along it doesn't keep
+        // pushing into it. Slopes and the stair don't count: feeding their (shorter) horizontal movement
+        // back in would slow the player a little more every frame, down to a crawl on the grand stair.
+        groundNormal.set(0, 1, 0);
+        for (let i = 0; i < c.numComputedCollisions(); i++) {
+          const hit = c.computedCollision(i);
+          if (!hit) continue;
+          const n = hit.normal1;
+          if (Math.abs(n.y) < WALL_NORMAL_Y) {
+            motion.velocity.x = m.x / dt;
+            motion.velocity.z = m.z / dt;
+          } else if (Math.abs(n.y) < groundNormal.y) {
+            groundNormal.set(n.x, n.y, n.z).multiplyScalar(Math.sign(n.y)); // the slope underfoot, pointing up
+          }
+        }
+
+        x = t.x + m.x;
+        y = t.y + m.y;
+        z = t.z + m.z;
+        if (y < FELL_OUT_Y) {
+          [x, y, z] = spawn;
+          motion.velocity.set(0, 0, 0);
+          motion.verticalSpeed = 0;
+        }
+        b.setNextKinematicTranslation({ x, y, z });
+
+        // Animation speed: distance actually covered along the ground, climbing included, so the legs keep
+        // walking at the right rate up and down the stair.
+        const across = Math.hypot(m.x, m.z) / dt;
+        speed = motion.grounded ? Math.hypot(across, m.y / dt) : across;
+        if (across > 0.1) localMotion.yaw = dampAngle(localMotion.yaw, Math.atan2(m.x, m.z), 12, dt);
+      }
+      localMotion.speed = speed;
+      localMotion.anim = speed < 0.1 ? 'idle' : speed > WALK_SPEED + 0.5 ? 'run' : 'walk';
+      localMotion.position.set(x, y, z);
     }
-    b.setNextKinematicTranslation({ x, y, z });
+    speed = localMotion.speed;
 
-    // Animation speed: distance actually covered along the ground, climbing included, so the legs keep
-    // walking at the right rate up and down the stair.
-    const across = Math.hypot(m.x, m.z) / dt;
-    const speed = motion.grounded ? Math.hypot(across, m.y / dt) : across;
-    if (across > 0.1) localMotion.yaw = dampAngle(localMotion.yaw, Math.atan2(m.x, m.z), 12, dt);
-    localMotion.speed = speed;
-    localMotion.anim = speed < 0.1 ? 'idle' : speed > WALK_SPEED + 0.5 ? 'run' : 'walk';
-    localMotion.position.set(x, y, z);
-
-    // Third-person follow camera with frame-rate-independent smoothing.
-    const yaw = cameraYaw.current;
-    camGoal.set(x + Math.sin(yaw) * CAMERA.distance, y + CAMERA.height, z + Math.cos(yaw) * CAMERA.distance);
-    lookAt.set(x, y + CAMERA.lookHeight, z);
+    // ---- Camera.
+    if (photo) {
+      // Photo mode: orbit the midpoint of the two of you (or just me, with no partner nearby).
+      const P = couple.photo;
+      let spread = 0;
+      if (partner.known && Math.abs(partner.position.y - y) < 3 && Math.hypot(partner.position.x - x, partner.position.z - z) < 14) {
+        P.focus.set((x + partner.position.x) / 2, (y + partner.position.y) / 2 + 0.35, (z + partner.position.z) / 2);
+        spread = Math.hypot(partner.position.x - x, partner.position.z - z);
+      } else {
+        P.focus.set(x, y + 0.35, z);
+      }
+      const distance = P.distance + spread * 0.9;
+      const flat = Math.cos(P.pitch);
+      camGoal.set(P.focus.x + Math.sin(P.yaw) * flat * distance, P.focus.y + Math.sin(P.pitch) * distance, P.focus.z + Math.cos(P.yaw) * flat * distance);
+      lookAt.copy(P.focus);
+    } else {
+      // Third-person follow camera with frame-rate-independent smoothing.
+      const yaw = cameraYaw.current;
+      camGoal.set(x + Math.sin(yaw) * CAMERA.distance, y + CAMERA.height, z + Math.cos(yaw) * CAMERA.distance);
+      lookAt.set(x, y + CAMERA.lookHeight, z);
+    }
 
     // Camera occlusion: cast from the look point toward the camera, and pull in if a wall is in the way.
     toCamera.subVectors(camGoal, lookAt);
@@ -188,7 +367,7 @@ export default function LocalPlayer({ avatarId }) {
       camGoal.copy(lookAt).addScaledVector(toCamera, safe);
     }
 
-    camera.position.lerp(camGoal, 1 - Math.exp(-8 * dt));
+    camera.position.lerp(camGoal, 1 - Math.exp(-(photo ? 10 : 8) * dt));
     camera.lookAt(lookAt);
 
     // Throttled upload. `volatile` drops the packet rather than queueing a stale one.
@@ -207,7 +386,7 @@ export default function LocalPlayer({ avatarId }) {
   return (
     <RigidBody ref={body} position={spawn} type="kinematicPosition" colliders={false}>
       <CapsuleCollider ref={collider} args={[CAPSULE.halfHeight, CAPSULE.radius]} />
-      <Avatar id={avatarId} motion={localMotion} lookAt={partner} footOffset={-CAPSULE.center} own />
+      <Avatar id={avatarId} motion={localMotion} lookAt={partner} footOffset={-CAPSULE.center} holdHand={hold} own />
     </RigidBody>
   );
 }

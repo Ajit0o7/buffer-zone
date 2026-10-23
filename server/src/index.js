@@ -2,7 +2,7 @@ import http from 'node:http';
 import { Server } from 'socket.io';
 import { createRoomStore } from './rooms.js';
 import { createMemoryRoutes } from './memories.js';
-import { normalizeKey, sanitizeCurtain, sanitizeState, sanitizeVoiceSignal } from './validate.js';
+import { normalizeKey, sanitizeCurtain, sanitizeEmote, sanitizeState, sanitizeTogether, sanitizeVoiceSignal } from './validate.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173').split(',').map((o) => o.trim());
@@ -47,6 +47,7 @@ const failedJoins = new Map();
 const lastUpdateAt = new Map();
 const curtainBuckets = new Map(); // socket.id -> { tokens, at }
 const voiceBuckets = new Map();
+const coupleBuckets = new Map(); // emotes and walk-together messages share a small budget per socket
 
 function takeToken(buckets, burst, refillPerMs, socketId, now) {
   const bucket = buckets.get(socketId) ?? { tokens: burst, at: now };
@@ -59,6 +60,8 @@ function takeToken(buckets, burst, refillPerMs, socketId, now) {
 }
 const takeCurtainToken = (socketId, now) => takeToken(curtainBuckets, CURTAIN_BURST, CURTAIN_REFILL_PER_MS, socketId, now);
 const takeVoiceToken = (socketId, now) => takeToken(voiceBuckets, VOICE_BURST, VOICE_REFILL_PER_MS, socketId, now);
+// A person can trigger an emote about twice a second, in short bursts: more is spam.
+const takeCoupleToken = (socketId, now) => takeToken(coupleBuckets, 6, 2 / 1000, socketId, now);
 
 /** A player who joins or resumes gets the room's held-open and held-closed curtains, and its added photos. */
 const sendGalleryState = (socket) => {
@@ -130,6 +133,22 @@ io.on('connection', (socket) => {
     if (peerSocketId) io.to(peerSocketId).emit('voice:signal', signal);
   });
 
+  // An emote (wave, kiss, ...): the partner's copy of this player's avatar plays it too.
+  socket.on('emote', (payload) => {
+    if (!takeCoupleToken(socket.id, Date.now())) return;
+    const emote = sanitizeEmote(payload);
+    const peerSocketId = emote && store.peerSocketId(socket.id);
+    if (peerSocketId) io.to(peerSocketId).emit('emote', emote);
+  });
+
+  // Walk together: request (from either player), accept, end. The partner's client decides what to do with it.
+  socket.on('together', (payload) => {
+    if (!takeCoupleToken(socket.id, Date.now())) return;
+    const message = sanitizeTogether(payload);
+    const peerSocketId = message && store.peerSocketId(socket.id);
+    if (peerSocketId) io.to(peerSocketId).emit('together', message);
+  });
+
   // High-frequency path: fire-and-forget, no ack, volatile so stale packets are never queued.
   socket.on('player:update', (payload) => {
     const now = Date.now();
@@ -145,6 +164,7 @@ io.on('connection', (socket) => {
     lastUpdateAt.delete(socket.id);
     curtainBuckets.delete(socket.id);
     voiceBuckets.delete(socket.id);
+    coupleBuckets.delete(socket.id);
     const detached = store.detach(socket.id);
     if (detached?.peerSocketId) io.to(detached.peerSocketId).emit('room:peer', { connected: false });
   });

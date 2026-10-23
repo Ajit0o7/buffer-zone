@@ -110,7 +110,12 @@ function PartnerTracker() {
   useFrame(() => {
     const s = remote.sample(performance.now() - INTERP_DELAY_MS, sample);
     partner.known = s !== null;
-    if (s) partner.position.copy(sample.position);
+    if (s) {
+      partner.position.copy(sample.position);
+      partner.yaw = sample.yaw;
+      partner.speed = sample.speed;
+      partner.sitting = sample.anim === 'sit';
+    }
   });
   return null;
 }

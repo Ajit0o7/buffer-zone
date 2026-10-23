@@ -50,8 +50,18 @@ NORMAL_TEX = 1024
 # the avatars directly. (folder, file): 'static' clips stand in place; 'xy' clips travel, and the build
 # measures their speed from that travel, then removes it so they play in place.
 MOTION = {
-    'm': {'idle': ('static', 'm_idle_neutral_01'), 'walk': ('xy', 'm_walk_fast_02'), 'run': ('xy', 'm_run_fast_01')},
-    'f': {'idle': ('static', 'f_idle_neutral_01'), 'walk': ('xy', 'f_walk_fast_02'), 'run': ('xy', 'f_run_fast_01')},
+    'm': {
+        'idle': ('static', 'm_idle_neutral_01'), 'walk': ('xy', 'm_walk_fast_02'), 'run': ('xy', 'm_run_fast_01'),
+        # Emotes and sitting (client/src/avatar/emotes.js plays them). Static clips keep the pelvis where the
+        # recording put it, which is what places a seated avatar on its seat.
+        'wave': ('static', 'm_wave_01'), 'cheer': ('static', 'm_cheer_01'), 'clap': ('static', 'm_claphands_01'),
+        'laugh': ('static', 'm_gestic_laugh_loud'), 'sit': ('static', 'm_sit_chair_breathe_01'),
+    },
+    'f': {
+        'idle': ('static', 'f_idle_neutral_01'), 'walk': ('xy', 'f_walk_fast_02'), 'run': ('xy', 'f_run_fast_01'),
+        'wave': ('static', 'f_wave_01'), 'cheer': ('static', 'f_cheer_01'), 'clap': ('static', 'f_claphands_01'),
+        'laugh': ('static', 'f_gestic_laugh_loud'), 'sit': ('static', 'f_sit_chair_breathe_01'),
+    },
 }
 
 AVATARS = {
@@ -144,8 +154,9 @@ def add_motion(g, set_name):
                     speeds[state] = float(travel / max(times[-1, 0], 1e-3))
                 src_y = src.json['nodes'][ch['target']['node']]['translation'][1]
                 values = values.copy()
-                values[:, 0] = 0
-                values[:, 2] = 0
+                if folder == 'xy':
+                    values[:, 0] = 0
+                    values[:, 2] = 0
                 values[:, 1] *= root_y / src_y
             out['samplers'].append({'input': g.add_accessor(times), 'output': g.add_accessor(values),
                                     'interpolation': sampler.get('interpolation', 'LINEAR')})

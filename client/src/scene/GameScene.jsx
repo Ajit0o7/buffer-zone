@@ -12,6 +12,8 @@ import PhotoFrames from '../gallery/PhotoFrames';
 import SpatialAudio from '../audio/SpatialAudio';
 import FootShadows from './FootShadows';
 import DustMotes from './DustMotes';
+import Reactions from './Reactions';
+import PhotoCapture from '../photo/PhotoCapture';
 import VisibilityBake from '../world/VisibilityBake';
 import Loading from './Loading';
 import './loaders'; // sets the local Draco decoder path before any model loads
@@ -61,6 +63,8 @@ export default function GameScene() {
           <Lighting hdri={HDRI_URL} />
           <FootShadows />
           <DustMotes />
+          <Reactions />
+          <PhotoCapture />
           <Physics gravity={[0, -9.81, 0]}>
             <Mansion />
             <LocalPlayer avatarId={localAvatar} />

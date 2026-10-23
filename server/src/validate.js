@@ -1,6 +1,6 @@
 // Pure input-validation helpers. Kept free of I/O so they can be unit-tested directly.
 
-export const ANIMATIONS = new Set(['idle', 'walk', 'run']);
+export const ANIMATIONS = new Set(['idle', 'walk', 'run', 'sit']);
 export const WORLD_BOUND = 200; // metres; anything outside is clamped (anti-teleport / sanity)
 export const MAX_SPEED = 10; // m/s; the game's run speed is 4.8
 
@@ -101,4 +101,21 @@ export function sanitizeMemoryMeta({ caption, date }) {
   text = text.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_CAPTION);
   const iso = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date)) ? date : '';
   return { caption: text, date: iso };
+}
+
+// ---- Couple interactions -----------------------------------------------------------------------------
+// Emotes and "walk together" are tiny, human-paced messages relayed to the partner. Both are whitelisted:
+// a client can only name things the game already knows, never send free text to the other player.
+
+export const EMOTES = new Set(['wave', 'kiss', 'heart', 'cheer', 'clap', 'laugh']);
+export const TOGETHER_KINDS = new Set(['request', 'accept', 'end']);
+
+/** { id }, where id is a known emote. Returns null if malformed. */
+export function sanitizeEmote(payload) {
+  return EMOTES.has(payload?.id) ? { id: payload.id } : null;
+}
+
+/** { kind: 'request' | 'accept' | 'end' }. Returns null if malformed. */
+export function sanitizeTogether(payload) {
+  return TOGETHER_KINDS.has(payload?.kind) ? { kind: payload.kind } : null;
 }

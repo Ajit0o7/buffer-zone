@@ -9,7 +9,7 @@ import { Vector3 } from 'three';
 export const curtainOverrides = new Map();
 
 /** The partner's interpolated position, refreshed once per frame by the gallery. */
-export const partner = { position: new Vector3(), known: false };
+export const partner = { position: new Vector3(), known: false, yaw: 0, speed: 0, sitting: false };
 
 let emit = null;
 

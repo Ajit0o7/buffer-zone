@@ -5,6 +5,9 @@ import { memoryAsPhoto } from '../gallery/memorySlots';
 import { useMemories } from '../state/memories';
 import MemoryModal from './MemoryModal';
 import Toolbar from './Toolbar';
+import CoupleControls from './CoupleControls';
+import PhotoMode from './PhotoMode';
+import { useCouple } from '../world/couple';
 import { ROOM_BY_ID } from '../world/rooms';
 import { inviteLink } from '../lobby/invite';
 
@@ -44,6 +47,7 @@ export default function Hud() {
     return () => document.removeEventListener('pointerlockchange', onChange);
   }, []);
 
+  const photoMode = useCouple((s) => s.photoMode);
   const role = useSession((s) => s.role);
   const roomKey = useSession((s) => s.key);
   const peerConnected = useSession((s) => s.peerConnected);
@@ -73,17 +77,27 @@ export default function Hud() {
     return () => clearTimeout(timer);
   }, [room]);
 
+  // Photo mode hides everything but its own viewfinder.
+  if (photoMode) {
+    return (
+      <div className="hud photo" aria-live="polite">
+        <PhotoMode />
+      </div>
+    );
+  }
+
   return (
     <div className="hud" aria-live="polite">
       {locked && <div className="crosshair" aria-hidden="true" />}
 
       {!locked && (
-        <div className="hint">Click to look around · WASD to walk · Shift to run · Click a curtain to open it · V voice · M add a photo · Esc to free the mouse</div>
+        <div className="hint">Click to look around · WASD walk · Shift run · Click a curtain to open it · E sit · H walk together · 1–6 emotes · C photo · V voice · M add a photo · Esc to free the mouse</div>
       )}
 
       {role === 'host' && roomKey && !peerConnected && <KeyCard roomKey={roomKey} />}
 
       <Toolbar onAddMemory={openForm} />
+      <CoupleControls disabled={adding} />
       {notice && <p className="toast" role="status">{notice.text}</p>}
       {adding && <MemoryModal onClose={() => setAdding(false)} />}
 

@@ -453,3 +453,215 @@ button:disabled {
   padding: 0.3rem 0;
   font-size: 0.9rem;
 }
+
+/* Couple controls: emote bar, prompts, photo mode */
+.couple-prompts {
+  position: absolute;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.prompt {
+  margin: 0;
+  background: var(--panel);
+  border: 1px solid rgba(224, 169, 109, 0.5);
+  border-radius: 999px;
+  padding: 0.4rem 1rem;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+.prompt.together-invited {
+  border-color: #f08aa5;
+  animation: nudge 1.6s ease-in-out infinite;
+}
+
+.prompt.together-on {
+  border-color: #f08aa5;
+}
+
+@keyframes nudge {
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+.emote-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--panel);
+  border-radius: 999px;
+  pointer-events: auto;
+}
+
+.emote {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.25rem 0.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.emote:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.emote kbd {
+  padding: 0 0.3rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  font-size: 0.7rem;
+}
+
+.emote.wide {
+  font-size: 0.9rem;
+  padding: 0.25rem 0.7rem;
+}
+
+.emote.on {
+  background: rgba(240, 138, 165, 0.35);
+}
+
+.emote.ask {
+  border-color: #f08aa5;
+}
+
+.emote-sep {
+  width: 1px;
+  height: 1.4rem;
+  background: rgba(255, 255, 255, 0.25);
+  margin: 0 0.2rem;
+}
+
+.photo-mode {
+  position: absolute;
+  inset: 0;
+}
+
+/* The square that will be in the print: everything outside it is dimmed. */
+.viewfinder {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(100vw, 100vh);
+  height: min(100vw, 100vh);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45);
+}
+
+.viewfinder .corner {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border: 0 solid rgba(255, 255, 255, 0.85);
+}
+
+.corner.tl { top: 14px; left: 14px; border-top-width: 2px; border-left-width: 2px; }
+.corner.tr { top: 14px; right: 14px; border-top-width: 2px; border-right-width: 2px; }
+.corner.bl { bottom: 14px; left: 14px; border-bottom-width: 2px; border-left-width: 2px; }
+.corner.br { bottom: 14px; right: 14px; border-bottom-width: 2px; border-right-width: 2px; }
+
+.photo-hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.35rem 0.9rem;
+  background: var(--panel);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.photo-buttons {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  pointer-events: auto;
+}
+
+.shutter {
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border-radius: 50%;
+  border: 4px solid #fff;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.shutter:hover {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0.8;
+  animation: flash 0.22s ease-out forwards;
+}
+
+@keyframes flash {
+  to {
+    opacity: 0;
+  }
+}
+
+.print-backdrop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(8, 6, 4, 0.75);
+  pointer-events: auto;
+}
+
+.print {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.print img {
+  max-height: 72vh;
+  max-width: 90vw;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  transform: rotate(-1.2deg);
+}
+
+.print figcaption {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.print .primary {
+  background: var(--accent);
+  color: #1a120b;
+  border-radius: 10px;
+  padding: 0.6rem 1.2rem;
+  text-decoration: none;
+}

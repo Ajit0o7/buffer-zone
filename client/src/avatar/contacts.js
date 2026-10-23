@@ -57,3 +57,27 @@ export function measureContacts(scene, clip, feet = ['LeftFoot', 'RightFoot']) {
   });
   return contacts.sort((a, b) => a.phase - b.phase);
 }
+
+const turnY = (v, angle) => {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return new Vector3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
+};
+
+/**
+ * Where the pelvis is, in the avatar's own frame (x to its left, y up, z forward, origin on the floor under its
+ * feet), in the first pose of a sitting clip. A seat uses it to put the avatar's pelvis on the seat and its feet on
+ * the floor. `facing` is how the file's model faces, from facingYaw() (the avatar is turned to face +z).
+ */
+export function measureSeated(scene, clip, facing = 0) {
+  const hips = findBone(scene, 'Hips');
+  if (!hips || clip.duration <= 0) return null;
+  const mixer = new AnimationMixer(scene);
+  mixer.clipAction(clip).play();
+  mixer.setTime(0);
+  scene.updateMatrixWorld(true);
+  const world = hips.getWorldPosition(new Vector3());
+  mixer.stopAllAction();
+  mixer.uncacheRoot(scene);
+  return turnY(world, -facing);
+}

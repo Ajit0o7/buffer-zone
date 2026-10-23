@@ -7,7 +7,10 @@ import { AVATARS, CAPSULE, CLIP_NAMES, CLIP_REFERENCE_SPEED, HEAD_LOOK, RUN_SPEE
 import { facingYaw, findClip, retargetClip } from './retarget';
 import { damp } from '../utils/math';
 import { pushStep } from '../world/footsteps';
-import { measureContacts } from './contacts';
+import { measureContacts, measureSeated } from './contacts';
+import { createCoupleLayer } from './couplePose';
+import { EXTRA_CLIPS } from './emotes';
+import { sitFits } from '../world/couple';
 
 const STATES = Object.keys(CLIP_NAMES); // ['idle', 'walk', 'run']
 const GAITS = ['walk', 'run'];
@@ -62,9 +65,11 @@ const findBone = (root, name) => {
  * @param motion     object with { speed, yaw }, read every frame (never via React state)
  * @param lookAt     optional { position: Vector3, known: boolean }: the partner's capsule centre
  * @param footOffset vertical offset so the model's feet sit on the physics capsule's base
- * @param own        true for the local player's avatar (only used to soften the sound of their own steps)
+ * @param own        true for the local player's avatar (softens its footsteps; takes its own emotes)
+ * @param holdHand   { active, side: 'Left' | 'Right', other: Vector3 | null }, read each frame: when active, this
+ *                   avatar's arm on `side` reaches for the middle between itself and `other` (walking together)
  */
-export default function Avatar({ id, motion, lookAt = null, footOffset = 0, own = false }) {
+export default function Avatar({ id, motion, lookAt = null, footOffset = 0, own = false, holdHand = null }) {
   const root = useRef();
   const config = AVATARS[id];
   const gltf = useGLTF(config.url);
@@ -76,20 +81,28 @@ export default function Avatar({ id, motion, lookAt = null, footOffset = 0, own 
   // Same rig as the clips: use them as they are. A different rig: retarget by bone name.
   const clips = useMemo(() => {
     const sameRig = config.clipSource === config.url;
-    return STATES.map((state) => {
-      const clip = findClip(source.animations, CLIP_NAMES[state]);
-      if (!clip) throw new Error(`No "${state}" clip in ${config.clipSource}`);
+    const make = (state, names) => {
+      const clip = findClip(source.animations, names);
+      if (!clip) return null;
       if (sameRig) {
-        const own = clip.clone();
-        own.name = state;
-        return own;
+        const copy = clip.clone();
+        copy.name = state;
+        return copy;
       }
       return retargetClip(clip, scene, source.scene, {
         name: state,
         targetRest: findClip(gltf.animations, T_POSE),
         sourceRest: findClip(source.animations, T_POSE),
       });
+    };
+    const base = STATES.map((state) => {
+      const clip = make(state, CLIP_NAMES[state]);
+      if (!clip) throw new Error(`No "${state}" clip in ${config.clipSource}`);
+      return clip;
     });
+    // Emotes and sitting are optional extras: an avatar file without them just doesn't do them.
+    const extras = EXTRA_CLIPS.map((name) => make(name, [name])).filter(Boolean);
+    return [...base, ...extras];
   }, [source, scene, gltf.animations, config.clipSource, config.url]);
 
   const { actions } = useAnimations(clips, root);
@@ -108,6 +121,20 @@ export default function Avatar({ id, motion, lookAt = null, footOffset = 0, own 
     return out;
   }, [gltf.scene, clips]);
   const feet = useMemo(() => ['LeftFoot', 'RightFoot'].map((name) => findBone(scene, name)), [scene]);
+
+  // Where this avatar's pelvis sits when seated, so a seat can place it (see world/seats.js).
+  useEffect(() => {
+    const sit = clips.find((c) => c.name === 'sit');
+    if (!sit || sitFits[id]) return;
+    const copy = cloneSkinned(gltf.scene);
+    sitFits[id] = measureSeated(copy, sit, facingYaw(copy));
+  }, [clips, gltf.scene, id]);
+
+  // Emotes, sitting and hand-holding, layered on the locomotion (avatar/couplePose.js).
+  const layer = useMemo(() => {
+    const names = ['Head', 'RightArm', 'RightForeArm', 'RightHand', 'LeftArm', 'LeftForeArm', 'LeftHand'];
+    return createCoupleLayer({ actions, own, bones: Object.fromEntries(names.map((n) => [n, findBone(scene, n)])) });
+  }, [actions, scene, own]);
   const footWorld = useMemo(() => new Vector3(), []);
   const rootWorld = useMemo(() => new Vector3(), []);
 
@@ -159,9 +186,10 @@ export default function Avatar({ id, motion, lookAt = null, footOffset = 0, own 
   useFrame((_, dt) => {
     const targetW = blendWeights(motion.speed);
     const w = weights.current;
+    const moveScale = layer.step(dt, motion); // less than 1 while sitting or doing a motion-capture emote
     for (const name of STATES) {
       w[name] = damp(w[name], targetW[name], 8, dt); // smooth transitions, no popping
-      actions[name]?.setEffectiveWeight(w[name]);
+      actions[name]?.setEffectiveWeight(w[name] * moveScale);
     }
 
     // Play each clip at the rate that matches ground speed, so the feet don't slide.
@@ -207,6 +235,8 @@ export default function Avatar({ id, motion, lookAt = null, footOffset = 0, own 
       turnBone(bones.neck, l.yaw * 0.4, l.pitch * 0.4); // the neck takes some of the turn...
       turnBone(bones.head, l.yaw * 0.6, l.pitch * 0.6); // ...the head the rest, so it doesn't look robotic
     }
+
+    layer.pose(dt, r, holdHand, motion); // arm poses on top: hand-holding, kiss, heart
   });
 
   return (

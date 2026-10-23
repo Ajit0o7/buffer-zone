@@ -15,6 +15,7 @@ import { LUTCubeLoader, ToneMappingMode } from 'postprocessing';
 import { Vector3 } from 'three';
 import { usePerf } from '../state/perf';
 import { localMotion } from '../world/shared';
+import { couple, useCouple } from '../world/couple';
 import { LUT_URL } from '../world/config';
 
 const SUN_DIRECTION = new Vector3(8, 14, 6).normalize();
@@ -77,9 +78,14 @@ function Grade() {
  *   cinematic - adds SSAO and depth of field (?quality=cinematic)
  */
 function Post({ tier }) {
+  // Photo mode adds depth of field in any tier, focused on the midpoint of the two of you: it is the one moment
+  // the extra pass is worth it, and it costs nothing the rest of the time (the effect isn't mounted).
+  const photo = useCouple((s) => s.photoMode);
+  const portrait = <DepthOfField target={couple.photo.focus} focusRange={0.012} focalLength={0.05} bokehScale={5} resolutionScale={0.5} />;
   if (tier === 'low') {
     return (
       <EffectComposer multisampling={0}>
+        {photo && portrait}
         <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
       </EffectComposer>
     );
@@ -89,7 +95,7 @@ function Post({ tier }) {
     <EffectComposer multisampling={0} enableNormalPass={cinematic}>
       {cinematic && <SSAO samples={16} radius={0.12} intensity={18} luminanceInfluence={0.5} />}
       <Bloom intensity={0.3} luminanceThreshold={0.88} luminanceSmoothing={0.2} mipmapBlur />
-      {cinematic && <DepthOfField focusDistance={0.02} focalLength={0.006} bokehScale={1} />}
+      {photo ? portrait : cinematic && <DepthOfField focusDistance={0.02} focalLength={0.006} bokehScale={1} />}
       <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
       <HueSaturation saturation={0.06} />
       <BrightnessContrast contrast={0.05} />

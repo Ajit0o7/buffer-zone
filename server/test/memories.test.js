@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { createRoomStore } from '../src/rooms.js';
 import { createMemoryRoutes } from '../src/memories.js';
-import { sanitizeMemoryMeta, sanitizeVoiceSignal, sniffImage } from '../src/validate.js';
+import { sanitizeEmote, sanitizeMemoryMeta, sanitizeState, sanitizeTogether, sanitizeVoiceSignal, sniffImage } from '../src/validate.js';
 
 const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.from([0x20, 0, 0, 0]), Buffer.from('WEBPVP8 '), Buffer.alloc(64)]);
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64)]);
@@ -153,3 +153,19 @@ test('HTTP: upload, announce, download, and the checks that refuse bad requests'
 
     assert.equal((await fetch(`${base}/elsewhere`)).status, 404);
   }));
+
+test('emotes and walk-together messages are whitelisted: nothing free-form reaches the partner', () => {
+  assert.deepEqual(sanitizeEmote({ id: 'kiss', text: 'hi' }), { id: 'kiss' });
+  for (const id of ['wave', 'kiss', 'heart', 'cheer', 'clap', 'laugh']) assert.ok(sanitizeEmote({ id }));
+  assert.equal(sanitizeEmote({ id: '<script>' }), null);
+  assert.equal(sanitizeEmote({ id: 'toString' }), null);
+  assert.equal(sanitizeEmote(null), null);
+  assert.deepEqual(sanitizeTogether({ kind: 'accept', x: 1 }), { kind: 'accept' });
+  assert.equal(sanitizeTogether({ kind: 'teleport' }), null);
+  assert.equal(sanitizeTogether('request'), null);
+});
+
+test('a seated player is relayed as sitting; unknown animations still fall back to idle', () => {
+  assert.equal(sanitizeState({ p: [1, 2, 3], r: 0, a: 'sit', v: 0 }).a, 'sit');
+  assert.equal(sanitizeState({ p: [1, 2, 3], r: 0, a: 'fly', v: 0 }).a, 'idle');
+});

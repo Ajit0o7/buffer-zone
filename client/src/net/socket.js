@@ -3,6 +3,7 @@ import { useSession } from '../state/session';
 import { remote } from '../world/shared';
 import { applyCurtainSnapshot, setCurtainEmitter, setCurtainOverride } from '../gallery/curtainState';
 import { bindMemorySocket } from '../gallery/memoryNet';
+import { bindCoupleSocket } from './coupleNet';
 
 import { SERVER_URL } from './serverUrl';
 
@@ -33,6 +34,7 @@ export function bindSocket() {
   };
 
   const unbindMemories = bindMemorySocket(socket);
+  const unbindCouple = bindCoupleSocket(socket);
 
   socket.on('room:peer', onPeer);
   socket.on('world:peer', onWorld);
@@ -41,6 +43,7 @@ export function bindSocket() {
   socket.on('gallery:state', onGalleryState);
   return () => {
     unbindMemories();
+    unbindCouple();
     setCurtainEmitter(null);
     socket.off('gallery:curtain', onCurtain);
     socket.off('gallery:state', onGalleryState);
