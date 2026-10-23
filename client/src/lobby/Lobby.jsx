@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AudioContext } from 'three';
 import { socket } from '../net/socket';
 import { useSession } from '../state/session';
+import { forgetInviteKey, keyFromHash } from './invite';
 
 const ERROR_TEXT = {
   invalid_key: 'That key does not match a room.',
@@ -15,6 +16,7 @@ export default function Lobby() {
   const [joinKey, setJoinKey] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const invited = useRef(false);
 
   // Tell the guest when the server is unreachable, instead of letting Join hang silently.
   useEffect(() => {
@@ -42,18 +44,37 @@ export default function Lobby() {
     });
   };
 
-  const joinRoom = (event) => {
-    event.preventDefault();
+  const join = (key) => {
     setBusy(true);
     setError(null);
     unlockAudio();
-    socket.emit('room:join', { key: joinKey }, (res) => {
+    socket.emit('room:join', { key }, (res) => {
       setBusy(false);
       if (!res.ok) return setError(ERROR_TEXT[res.error] ?? 'Something went wrong.');
+      forgetInviteKey();
       setSession({ roomId: res.roomId, role: 'guest', token: res.token });
       setPeerConnected(res.peerConnected);
     });
   };
+
+  const joinRoom = (event) => {
+    event.preventDefault();
+    join(joinKey);
+  };
+
+  // Opened from an invite link (#room=KEY): fill in the key and join once, without typing. A wrong or
+  // used key leaves the form filled in, with the usual error. (The ref also covers React's dev double-run.)
+  useEffect(() => {
+    const key = keyFromHash(window.location.hash);
+    if (!key || invited.current) return;
+    invited.current = true;
+    setJoinKey(key);
+    // Browsers only allow audio after a user gesture, and opening a link isn't one: the first click
+    // anywhere unlocks it (SpatialAudio also listens for that).
+    if (socket.connected) join(key);
+    else socket.once('connect', () => join(key));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <main className="lobby">

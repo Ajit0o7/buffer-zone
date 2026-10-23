@@ -143,6 +143,7 @@ export default function GalleryBatch({ count, children }) {
     const s = new Vector3();
 
     const write = (i) => {
+      if (!mountingMesh.current || !curtainMesh.current) return; // tearing down: the meshes are already gone
       const placed = anchors[i].placed && visible[i];
       const m = matrices[i];
       mountingMesh.current.setMatrixAt(i, placed ? m : HIDDEN);
@@ -169,6 +170,17 @@ export default function GalleryBatch({ count, children }) {
         a.normal.set(0, 0, 1).applyQuaternion(q);
         a.placed = true;
         matrices[i].copy(matrix);
+        write(i);
+      },
+
+      /** Takes painting i off the wall (its memory was removed): the instance goes back to being spare. */
+      clear(i) {
+        anchors[i].placed = false;
+        visible[i] = true;
+        open[i] = 0;
+        assets.openAttr.array[i * 2] = 0;
+        assets.openAttr.array[i * 2 + 1] = 0;
+        dirtyOpen = true;
         write(i);
       },
 

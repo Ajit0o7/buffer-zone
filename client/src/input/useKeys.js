@@ -19,6 +19,8 @@ export function useKeys() {
 
   useEffect(() => {
     const setHeld = (isDown) => (event) => {
+      // Typing in a text box (the Add memory form) must not walk the character about.
+      if (isDown && event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
       const action = BINDINGS[event.code];
       if (action) held.current[action] = isDown;
     };

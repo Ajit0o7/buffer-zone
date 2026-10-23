@@ -10,6 +10,8 @@ import LocalPlayer from '../avatar/LocalPlayer';
 import RemotePlayer from '../avatar/RemotePlayer';
 import PhotoFrames from '../gallery/PhotoFrames';
 import SpatialAudio from '../audio/SpatialAudio';
+import FootShadows from './FootShadows';
+import DustMotes from './DustMotes';
 import VisibilityBake from '../world/VisibilityBake';
 import Loading from './Loading';
 import './loaders'; // sets the local Draco decoder path before any model loads
@@ -57,6 +59,8 @@ export default function GameScene() {
         {/* No fallback here: a DOM overlay (Loading) shows progress, so nothing 3D is drawn while loading */}
         <Suspense fallback={null}>
           <Lighting hdri={HDRI_URL} />
+          <FootShadows />
+          <DustMotes />
           <Physics gravity={[0, -9.81, 0]}>
             <Mansion />
             <LocalPlayer avatarId={localAvatar} />

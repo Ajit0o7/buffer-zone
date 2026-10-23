@@ -22,6 +22,7 @@ import { GALLERY } from '../world/config';
  */
 const BUDGET_BYTES = GALLERY.textureBudgetMB * 1024 * 1024;
 const MAX_RESIDENT = GALLERY.maxResident;
+const MAX_SIDE = 4096; // pixels; photos you add are shrunk to 1600 before upload, so this only refuses foreign files
 const entries = new Map(); // src -> { refs, texture, bytes, promise, lastUsed }
 
 let bitmapLoader = null;
@@ -44,6 +45,10 @@ async function load(src, gl) {
     texture = await getKTX2Loader(gl).loadAsync(src);
   } else {
     const bitmap = await getBitmapLoader().loadAsync(src);
+    if (Math.max(bitmap.width, bitmap.height) > MAX_SIDE) {
+      bitmap.close(); // a few kilobytes on the wire can still decode to a texture too big for the GPU
+      throw new Error(`image is larger than ${MAX_SIDE}px`);
+    }
     texture = new Texture(bitmap);
     texture.flipY = false;
     texture.generateMipmaps = true;

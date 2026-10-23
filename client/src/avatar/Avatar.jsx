@@ -6,8 +6,11 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 import { AVATARS, CAPSULE, CLIP_NAMES, CLIP_REFERENCE_SPEED, HEAD_LOOK, RUN_SPEED, WALK_SPEED } from '../world/config';
 import { facingYaw, findClip, retargetClip } from './retarget';
 import { damp } from '../utils/math';
+import { pushStep } from '../world/footsteps';
+import { measureContacts } from './contacts';
 
 const STATES = Object.keys(CLIP_NAMES); // ['idle', 'walk', 'run']
+const GAITS = ['walk', 'run'];
 // If a rig's file ships one of these, its first frame is the reference pose for retargeting.
 const T_POSE = ['TPose', 'T-Pose', 'tpose', 'bind'];
 
@@ -59,8 +62,9 @@ const findBone = (root, name) => {
  * @param motion     object with { speed, yaw }, read every frame (never via React state)
  * @param lookAt     optional { position: Vector3, known: boolean }: the partner's capsule centre
  * @param footOffset vertical offset so the model's feet sit on the physics capsule's base
+ * @param own        true for the local player's avatar (only used to soften the sound of their own steps)
  */
-export default function Avatar({ id, motion, lookAt = null, footOffset = 0 }) {
+export default function Avatar({ id, motion, lookAt = null, footOffset = 0, own = false }) {
   const root = useRef();
   const config = AVATARS[id];
   const gltf = useGLTF(config.url);
@@ -90,8 +94,51 @@ export default function Avatar({ id, motion, lookAt = null, footOffset = 0 }) {
 
   const { actions } = useAnimations(clips, root);
   const weights = useRef({ idle: 1, walk: 0, run: 0 });
+  const lastScale = useRef({ walk: 1, run: 1 }); // the playback rate the mixer used for the frame just advanced
   const look = useRef({ yaw: 0, pitch: 0 });
   const bones = useMemo(() => ({ neck: findBone(scene, 'Neck'), head: findBone(scene, 'Head') }), [scene]);
+
+  // Footsteps: when, in each gait's cycle, each foot lands. Measured once on a throwaway copy of the character.
+  const contacts = useMemo(() => {
+    const out = {};
+    for (const [k, state] of STATES.entries()) {
+      if (!GAITS.includes(state)) continue;
+      out[state] = measureContacts(cloneSkinned(gltf.scene), clips[k]);
+    }
+    return out;
+  }, [gltf.scene, clips]);
+  const feet = useMemo(() => ['LeftFoot', 'RightFoot'].map((name) => findBone(scene, name)), [scene]);
+  const footWorld = useMemo(() => new Vector3(), []);
+  const rootWorld = useMemo(() => new Vector3(), []);
+
+  /**
+   * Fires a step for every contact the gait's cycle passed since the last frame. It works from how far the
+   * animation advanced (its speed and the frame time), so a slow frame passes several contacts at once and
+   * none are missed; each lands at the right spot in the stride.
+   */
+  function detectSteps(dt) {
+    const w = weights.current;
+    const state = w.run > w.walk ? 'run' : 'walk';
+    const action = actions[state];
+    const list = contacts[state];
+    if (!action || !list?.length || w[state] < 0.4) return;
+    const duration = action.getClip().duration;
+    const end = action.time / duration; // phase now, 0..1 (the mixer has already advanced it this frame)
+    const start = end - Math.min(dt, 2) * lastScale.current[state] / duration; // (a long stall counts at most 2 s of steps)
+    for (let loop = Math.floor(start); loop <= Math.floor(end); loop++) {
+      for (const c of list) {
+        const at = loop + c.phase;
+        if (at <= start || at > end) continue;
+        const bone = feet[c.foot];
+        if (!bone) continue;
+        bone.getWorldPosition(footWorld);
+        root.current.getWorldPosition(rootWorld);
+        pushStep({ x: footWorld.x, y: rootWorld.y, z: footWorld.z, speed: motion.speed, foot: c.foot, own });
+        if (import.meta.env.DEV) window.__feetLog?.push([c.foot, +c.phase.toFixed(3), +motion.speed.toFixed(2)]);
+      }
+    }
+  }
+
   // Some exports face -Z; turn them so every avatar faces +Z, the direction motion.yaw assumes.
   const nativeYaw = useMemo(() => facingYaw(scene), [scene]);
 
@@ -132,6 +179,9 @@ export default function Avatar({ id, motion, lookAt = null, footOffset = 0 }) {
     const r = root.current;
     if (!r) return;
     r.rotation.y = motion.yaw;
+
+    if (motion.speed > 0.5) detectSteps(dt);
+    for (const gait of GAITS) if (actions[gait]) lastScale.current[gait] = actions[gait].timeScale;
 
     // Head-look: when the partner is close and roughly in front, ease the head toward their eyes.
     let goalYaw = 0;

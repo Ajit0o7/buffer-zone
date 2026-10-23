@@ -7,7 +7,9 @@ and a grand staircase climbs to the Upper Sunset Balcony.
 
 Deep dives: [docs/ROOMS.md](docs/ROOMS.md) (the five rooms, the grand stair, practical lights) ·
 [docs/PERFORMANCE.md](docs/PERFORMANCE.md) (90+ fps architecture, zone culling, KTX2 pipeline) ·
-[docs/GALLERY.md](docs/GALLERY.md) (curtain mechanic, VRAM lifecycle, sync).
+[docs/GALLERY.md](docs/GALLERY.md) (curtain mechanic, VRAM lifecycle, sync) ·
+[docs/VOICE.md](docs/VOICE.md) (spatial voice chat) · [docs/AUDIO.md](docs/AUDIO.md) (footsteps, reverb) ·
+[docs/MEMORIES.md](docs/MEMORIES.md) (adding your own photos).
 
 ```
 buffer-zone/
@@ -24,7 +26,7 @@ buffer-zone/
 │   │   └── basis/         KTX2 transcoder }  (scripts/copy-decoders.mjs)
 │   └── src/
 │       ├── main.jsx · App.jsx · styles.css
-│       ├── lobby/         Lobby.jsx: create room / enter key (shows offline state)
+│       ├── lobby/         Lobby.jsx: create room / enter key / join from an invite link (shows offline state)
 │       ├── ui/            ErrorBoundary.jsx: a failed asset shows a message, not a blank page
 │       ├── net/           socket.js: Socket.io client + event bridge
 │       ├── state/         session.js: zustand (UI state, reconnect token); perf.js: rendering tier
@@ -40,16 +42,18 @@ buffer-zone/
 │       │                  LocalPlayer.jsx (character controller + camera + sync), RemotePlayer.jsx
 │       ├── gallery/       PhotoFrames.jsx, CurtainPhotoFrame.jsx, GalleryBatch.jsx (instanced), curtainMaterial.js,
 │       │                  textureCache.js (LRU VRAM), curtainState.js (sync), photos.js (your data)
-│       ├── audio/         SpatialAudio.jsx (room music + positional footsteps)
-│       ├── hud/           Hud.jsx (room key, room name, photo caption overlay)
+│       ├── audio/         SpatialAudio.jsx (music, step events, reverb), footstepSynth.js, reverb.js,
+│       │                  Voice.jsx + voiceNet.js (WebRTC voice chat, positioned)
+│       ├── hud/           Hud.jsx (invite link, room name, captions), Toolbar.jsx (mic, Add memory), MemoryModal.jsx
 │       └── utils/         math.js (damped smoothing)
 ├── server/                Node 20+ · Socket.io 4
 │   └── src/
 │       ├── index.js       HTTP + Socket.io, rate limits, 20 Hz fan-out, graceful shutdown
 │       ├── rooms.js       room registry: keys hashed, tokens for reconnect, cleanup
-│       └── validate.js    pure input checks: key normalisation, payload sanitising
+│       ├── memories.js    HTTP upload and download of photos players add (see docs/MEMORIES.md)
+│       └── validate.js    pure input checks: key normalisation, payload sanitising, voice signals, image sniffing
 ├── server/test/           node:test unit tests (run: npm test)
-├── docs/                  ROOMS.md, PERFORMANCE.md, GALLERY.md
+├── docs/                  ROOMS.md, PERFORMANCE.md, GALLERY.md, VOICE.md, AUDIO.md, MEMORIES.md
 └── scripts/               copy-decoders.mjs, fetch-assets.mjs, make-standins.mjs,
                            dress-avatars.py + avatar_tools/ (builds the Nepali-dressed avatars)
 ```
@@ -99,6 +103,12 @@ Single Node process, in-memory rooms (`server/src/rooms.js`).
 | C→S | `gallery:curtain` | `{ id, open }` | Click: hold open/closed, or `null` to release (burst 20, 10/s) |
 | S→C | `gallery:curtain` | `{ id, open }` | The partner's click, mirrored |
 | S→C | `gallery:state` | `{ [id]: bool }` | Held curtains, sent on join and resume |
+| both | `voice:signal` | `{ sid, kind, data }` | WebRTC offer / answer / ICE candidate / bye, relayed to the partner only (burst 40, 20/s) |
+| S→C | `gallery:memories` | `[{ id, index, caption, date, type }]` | Photos the players added, on join and resume |
+| S→C | `gallery:memory` | `{ id, index, caption, date, type }` | A photo was added (both players) |
+| C→S | `gallery:memory-remove` | `{ id }` | Take a photo down; answered by `gallery:memory-removed` |
+| HTTP | `POST /api/rooms/:room/memories` | image bytes | Upload, authorised by the room token (1.5 MB max) |
+| HTTP | `GET /api/rooms/:room/memories/:id` | — | The image, addressed by an unguessable id |
 
 Bandwidth: about 60 bytes × 20 Hz × 2 directions ≈ 2.4 KB/s per player. Latency is one network RTT plus
 the interpolation delay (`INTERP_DELAY_MS = 110` in `world/config.js`).
@@ -154,8 +164,12 @@ The tier is chosen by `PerfGovernor` from the measured frame rate (target min(re
 - **Rooms:** five rooms in `world/rooms.js` (Grand Atrium, Memory Corridor, Study & Library, Living Salon & Hearth,
   Upper Sunset Balcony). Each has a music weight, crossfaded over 6 m at room edges, and its name fades in on the HUD
   when you enter. See [docs/ROOMS.md](docs/ROOMS.md).
-- **Partner footsteps:** a `PositionalAudio` anchored to the partner. Cadence = speed ÷ 0.9 m per stride,
-  so it speeds up on a run and stops when they stop. Falls off with distance (inverse model, 3 m reference, gentle rolloff for large halls).
+- **Footsteps:** one sound per foot contact, from the avatar's animation, for both players: stone or the stair's carpet, walk or
+  run, eight variants, positioned where the foot landed, in a stone-hall reverb ([docs/AUDIO.md](docs/AUDIO.md)).
+- **Voice chat:** press V. Peer-to-peer WebRTC, positioned and dulled with distance ([docs/VOICE.md](docs/VOICE.md)).
+- **Add memory:** upload your own photos onto the walls, live, for both of you ([docs/MEMORIES.md](docs/MEMORIES.md)).
+- **Invite link:** the host's key card has a **Copy invite link** button; opening `…/#room=KEY` joins the room with no typing.
+  The key is in the URL fragment, which browsers never send to a server.
 - **Autoplay:** the Create/Join click in the lobby calls `AudioContext.resume()`. Music starts as soon as it has loaded, and on
   the next click if the browser still blocks it.
 
@@ -307,11 +321,20 @@ for testing and profiling; production builds strip them.
    Walk up the grand stair: the walk keeps its full stride all the way up.
 3. Rooms: walk east up the grand stair from the spawn, across the landing through either arch, and down onto the bridge.
    Room names fade in as you cross into each room. The hearth is on the north aisle's east half, the study lamps on its west half.
-4. Frame rate: open the browser's performance panel (or add `r3f-perf`), and check frame time stays under 11.1 ms. In the console,
+4. Invite link: as host, press **Copy invite link** on the key card and open it in another tab or on another computer: it joins at once.
+5. Voice: press **V** in both tabs (allow the microphone). Walk apart: the voice gets quieter and duller, and comes from the
+   partner's side. Use headphones, or you will hear yourself.
+6. Footsteps: each foot's landing makes a sound, in time with the animation, for both of you; on the grand stair's red carpet the
+   steps are softer. Hold Shift to run.
+7. Photos: press **M**, choose a photo, add a caption, and hang it. It appears in the Memory Corridor (or on the balcony) for both of you.
+8. Frame rate: open the browser's performance panel (or add `r3f-perf`), and check frame time stays under 11.1 ms. In the console,
    `__three.gl.info.render` shows calls per frame, `__gallery.stats()` the resident photo textures (6 at most once idle), and
    `__zones.viewer.rooms` the rooms you are in. See [docs/PERFORMANCE.md](docs/PERFORMANCE.md#7-measuring).
 
-Verified in this sandbox: the server unit tests pass, the client builds, production bundles contain no dev hooks, and both
+Verified in this sandbox, with two real browsers: invite links, voice chat (connected both ways, the fake microphone's speaking
+indicator on each side, the voice dulling from 10 kHz to 2.3 kHz as the partner moves away), footsteps on stone and carpet, and
+adding, viewing and removing a photo, all on both screens. Not verified: how the footsteps and the voice actually *sound*, as the
+sandbox cannot play audio; the footstep balance was tuned by measuring its spectrum (docs/AUDIO.md). Also: the server unit tests pass, the client builds, production bundles contain no dev hooks, and both
 avatars and the stand-in fallback load without errors. Walking up the stair takes the player from the nave floor (capsule centre
 0.9 m) to the landing (7.17 m) and down onto the bridge (5.91 m). The visibility bake finishes for all 27 targets, and a frame
 draws 34–51 calls with one player in view, about 65–70 with both avatars on screen. With two players, a curtain
@@ -328,17 +351,18 @@ Environment variables (see `client/.env.example`):
 
 Done so far: camera occlusion, snapshot interpolation, walk/run phase lock, the offline environment, the error boundary,
 the lobby's offline state, key normalisation, unit tests, graceful shutdown, two retargeted avatars with head-look, five
-rooms with a grand stair, 18 themed paintings, zone culling and pooled practical lights.
+rooms with a grand stair, 18 themed paintings, zone culling and pooled practical lights, Nepali-dressed avatars with their own
+motion capture, spatial voice chat, footsteps from real foot contacts with a hall reverb, contact shadows and dust motes, invite
+links, and photo uploads.
 
 Next, in order of value for the effort:
 
-1. **Spatial voice chat** — WebRTC audio between the two players, panned with `PositionalAudio` at the partner's head.
-   The biggest gain in presence; Socket.io can carry the signalling.
-2. **Photo uploads** — drag and drop in the browser, convert to WebP (or KTX2) client-side, store in object storage, and
-   add the frame to the next free wall spot (the flat-wall search in docs/GALLERY.md, run at runtime).
+1. **Permanent photo storage** — uploads live in server memory with the room (docs/MEMORIES.md). Object storage (S3, Firebase)
+   behind `addMemory`/`getMemory`, plus rooms that outlive their key, would keep them for good.
+2. **Real footstep recordings** — drop short clips into `FOOTSTEP_SAMPLES` (docs/AUDIO.md); recordings beat synthesis.
 3. **Foot IK on the stair** — feet sit within 9 cm of each tread on the ramp collider; a two-bone IK pass with a
    downward ray per foot would plant them exactly.
-4. **Curtain foley** — a positional rustle when a curtain starts to move (one pooled `PositionalAudio`).
+4. **Curtain foley** — a positional rustle when a curtain starts to move (the footstep player's pool of sounds can carry it).
 5. **Sit interactions** — sensor colliders on benches and the hearth, E to sit, a kinematic snap and a sit clip.
 6. **Baked lighting** — bake the practical lights and the sun into a lightmap (`LIGHTMAP_URL`), then drop the pool.
 7. **Movement over WebRTC data channels** (for example Geckos.io), with client-side prediction. Worth it only once

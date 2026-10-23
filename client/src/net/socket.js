@@ -2,8 +2,9 @@ import { io } from 'socket.io-client';
 import { useSession } from '../state/session';
 import { remote } from '../world/shared';
 import { applyCurtainSnapshot, setCurtainEmitter, setCurtainOverride } from '../gallery/curtainState';
+import { bindMemorySocket } from '../gallery/memoryNet';
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3001';
+import { SERVER_URL } from './serverUrl';
 
 // autoConnect is off so React decides when the connection opens (see App.jsx).
 export const socket = io(SERVER_URL, {
@@ -31,12 +32,15 @@ export function bindSocket() {
     });
   };
 
+  const unbindMemories = bindMemorySocket(socket);
+
   socket.on('room:peer', onPeer);
   socket.on('world:peer', onWorld);
   socket.on('connect', onConnect);
   socket.on('gallery:curtain', onCurtain);
   socket.on('gallery:state', onGalleryState);
   return () => {
+    unbindMemories();
     setCurtainEmitter(null);
     socket.off('gallery:curtain', onCurtain);
     socket.off('gallery:state', onGalleryState);

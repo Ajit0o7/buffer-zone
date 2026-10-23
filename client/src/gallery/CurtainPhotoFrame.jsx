@@ -195,12 +195,19 @@ export default function CurtainPhotoFrame({ photo, index }) {
   const toggle = () => setCurtainOverride(photo.id, !st.wantOpen);
 
   useEffect(() => {
+    // (Re)mounting starts from the wall again: React's dev double-run, or a spare slot taking a new photo.
+    Object.assign(st, { placed: false, snapped: false, snapTries: 0, near: false, wantOpen: false, open: 0, fade: 0 });
     gallery.hitboxes[index] = hitbox.current;
     gallery.toggles[index] = toggle;
     return () => {
       gallery.hitboxes[index] = null;
       gallery.toggles[index] = null;
-      if (st.tex === 'ready') releaseTexture(photo.src);
+      gallery.clear(index);
+      if (st.tex === 'ready') {
+        releaseTexture(photo.src);
+        material.map = BLANK;
+      }
+      st.tex = 'idle';
       st.loadToken += 1; // a fetch still in flight releases itself when it lands
       unregisterTarget(sightId);
       material.dispose();

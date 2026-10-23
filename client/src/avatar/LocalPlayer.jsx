@@ -207,7 +207,7 @@ export default function LocalPlayer({ avatarId }) {
   return (
     <RigidBody ref={body} position={spawn} type="kinematicPosition" colliders={false}>
       <CapsuleCollider ref={collider} args={[CAPSULE.halfHeight, CAPSULE.radius]} />
-      <Avatar id={avatarId} motion={localMotion} lookAt={partner} footOffset={-CAPSULE.center} />
+      <Avatar id={avatarId} motion={localMotion} lookAt={partner} footOffset={-CAPSULE.center} own />
     </RigidBody>
   );
 }

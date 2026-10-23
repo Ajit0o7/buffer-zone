@@ -5,6 +5,10 @@ import GalleryBatch, { useGallery } from './GalleryBatch';
 import CurtainPhotoFrame from './CurtainPhotoFrame';
 import { partner } from './curtainState';
 import { PHOTOS } from './photos';
+import { GALLERY_CAPACITY, memoryAsPhoto } from './memorySlots';
+import { memoryUrl } from './memoryNet';
+import { useMemories } from '../state/memories';
+import { useSession } from '../state/session';
 import { localMotion, remote } from '../world/shared';
 import { GALLERY, INTERP_DELAY_MS } from '../world/config';
 
@@ -112,15 +116,23 @@ function PartnerTracker() {
 }
 
 /**
- * The gallery: every photo in photos.js behind a curtain. Must sit inside <Physics>, because each
- * frame snaps itself onto the nearest wall with a physics ray when the scene starts.
+ * The gallery: every photo in photos.js, and every memory the players have added, behind a curtain.
+ * The batch is built with a spare instance for each possible memory, so adding one needs no rebuild:
+ * its frame just mounts on its slot's instance. Must sit inside <Physics>, because each frame snaps
+ * itself onto the nearest wall with a physics ray when the scene starts.
  */
 export default function PhotoFrames({ photos = PHOTOS }) {
+  const roomId = useSession((s) => s.roomId);
+  const memories = useMemories((s) => s.list);
   return (
-    <GalleryBatch count={photos.length}>
+    <GalleryBatch count={GALLERY_CAPACITY}>
       {photos.map((photo, i) => (
         <CurtainPhotoFrame key={photo.id} photo={photo} index={i} />
       ))}
+      {memories.map((memory) => {
+        const photo = memoryAsPhoto(memory, memoryUrl(roomId, memory.id));
+        return <CurtainPhotoFrame key={photo.id} photo={photo} index={photo.slot} />;
+      })}
       <SpotlightPool />
       <CenterClick />
       <PartnerTracker />

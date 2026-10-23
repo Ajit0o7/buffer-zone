@@ -29,6 +29,7 @@ const EAST_END = 10.267;
 const BRIDGE_WALL = 10.413;
 
 export const CATEGORIES = {
+  memories: 'New Memories', // photos added in the game (gallery/memorySlots.js)
   'early-days': 'Early Days',
   'little-moments': 'Little Moments',
   milestones: 'Milestones',

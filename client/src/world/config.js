@@ -32,6 +32,11 @@ export const HEAD_LOOK = { radius: 4.5, maxYaw: (70 * Math.PI) / 180, maxPitch: 
 // Fallback capture speeds for avatars that don't give their own clipSpeed.
 export const CLIP_REFERENCE_SPEED = { walk: 1.8, run: 5.0 };
 
+// Optional recordings of footsteps, per surface ('stone', 'carpet'): URLs of short clips of one step each.
+// Left empty, the game synthesizes its footsteps (audio/footstepSynth.js). With recordings listed, they
+// are used instead, one picked at random per step. Put the files in client/public/audio/footsteps/.
+export const FOOTSTEP_SAMPLES = { stone: [], carpet: [] };
+
 // Interior HDRI for image-based lighting (CC0, Poly Haven). Set to null for the procedural fallback.
 export const HDRI_URL = '/hdri/venice_sunset_1k.hdr';
 // Optional 3D colour-grading LUT (.cube). One texture lookup, merged into the tone-mapping pass.

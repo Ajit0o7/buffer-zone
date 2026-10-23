@@ -1,7 +1,8 @@
 import http from 'node:http';
 import { Server } from 'socket.io';
 import { createRoomStore } from './rooms.js';
-import { normalizeKey, sanitizeCurtain, sanitizeState } from './validate.js';
+import { createMemoryRoutes } from './memories.js';
+import { normalizeKey, sanitizeCurtain, sanitizeState, sanitizeVoiceSignal } from './validate.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173').split(',').map((o) => o.trim());
@@ -14,9 +15,25 @@ const MAX_FAILED_JOINS = 8; // per socket, before further join attempts are refu
 const CURTAIN_BURST = 20;
 const CURTAIN_REFILL_PER_MS = 10 / 1000;
 
-const httpServer = http.createServer((req, res) => {
+// Voice signalling is a few messages per call: offer, answer, a dozen ICE candidates. Generous bursts, tight sustained rate.
+const VOICE_BURST = 40;
+const VOICE_REFILL_PER_MS = 20 / 1000;
+
+const store = createRoomStore();
+
+const memoryRoutes = createMemoryRoutes({
+  store,
+  origins: CLIENT_ORIGINS,
+  announce: (sockets, memory) => {
+    for (const id of sockets) io.to(id).emit('gallery:memory', memory);
+  },
+});
+
+const httpServer = http.createServer(async (req, res) => {
   if (req.url === '/health') return res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
+  if (await memoryRoutes(req, res)) return undefined;
   res.writeHead(404).end();
+  return undefined;
 });
 
 const io = new Server(httpServer, {
@@ -26,23 +43,28 @@ const io = new Server(httpServer, {
   pingTimeout: 5_000,
 });
 
-const store = createRoomStore();
 const failedJoins = new Map();
 const lastUpdateAt = new Map();
 const curtainBuckets = new Map(); // socket.id -> { tokens, at }
+const voiceBuckets = new Map();
 
-function takeCurtainToken(socketId, now) {
-  const bucket = curtainBuckets.get(socketId) ?? { tokens: CURTAIN_BURST, at: now };
-  bucket.tokens = Math.min(CURTAIN_BURST, bucket.tokens + (now - bucket.at) * CURTAIN_REFILL_PER_MS);
+function takeToken(buckets, burst, refillPerMs, socketId, now) {
+  const bucket = buckets.get(socketId) ?? { tokens: burst, at: now };
+  bucket.tokens = Math.min(burst, bucket.tokens + (now - bucket.at) * refillPerMs);
   bucket.at = now;
-  curtainBuckets.set(socketId, bucket);
+  buckets.set(socketId, bucket);
   if (bucket.tokens < 1) return false;
   bucket.tokens -= 1;
   return true;
 }
+const takeCurtainToken = (socketId, now) => takeToken(curtainBuckets, CURTAIN_BURST, CURTAIN_REFILL_PER_MS, socketId, now);
+const takeVoiceToken = (socketId, now) => takeToken(voiceBuckets, VOICE_BURST, VOICE_REFILL_PER_MS, socketId, now);
 
-/** A player who joins or resumes gets the room's held-open and held-closed curtains. */
-const sendGalleryState = (socket) => socket.emit('gallery:state', store.curtainSnapshot(socket.id));
+/** A player who joins or resumes gets the room's held-open and held-closed curtains, and its added photos. */
+const sendGalleryState = (socket) => {
+  socket.emit('gallery:state', store.curtainSnapshot(socket.id));
+  socket.emit('gallery:memories', store.memoryList(socket.id));
+};
 
 io.on('connection', (socket) => {
   // Host: create a room and receive the secret key (shown once, only to the host).
@@ -89,6 +111,25 @@ io.on('connection', (socket) => {
     if (peerSocketId) io.to(peerSocketId).emit('gallery:curtain', event);
   });
 
+  // A photo was taken down: free its wall spot for both players. (Adding goes through HTTP: see memories.js.)
+  socket.on('gallery:memory-remove', (payload) => {
+    const id = payload?.id;
+    if (typeof id !== 'string' || id.length > 64) return;
+    const peerSocketId = store.removeMemory(socket.id, id);
+    if (peerSocketId === undefined) return;
+    socket.emit('gallery:memory-removed', { id });
+    if (peerSocketId) io.to(peerSocketId).emit('gallery:memory-removed', { id });
+  });
+
+  // Voice chat: pass WebRTC setup messages to the partner. The audio itself never touches the server.
+  socket.on('voice:signal', (payload) => {
+    if (!takeVoiceToken(socket.id, Date.now())) return;
+    const signal = sanitizeVoiceSignal(payload);
+    if (!signal) return;
+    const peerSocketId = store.peerSocketId(socket.id);
+    if (peerSocketId) io.to(peerSocketId).emit('voice:signal', signal);
+  });
+
   // High-frequency path: fire-and-forget, no ack, volatile so stale packets are never queued.
   socket.on('player:update', (payload) => {
     const now = Date.now();
@@ -103,6 +144,7 @@ io.on('connection', (socket) => {
     failedJoins.delete(socket.id);
     lastUpdateAt.delete(socket.id);
     curtainBuckets.delete(socket.id);
+    voiceBuckets.delete(socket.id);
     const detached = store.detach(socket.id);
     if (detached?.peerSocketId) io.to(detached.peerSocketId).emit('room:peer', { connected: false });
   });

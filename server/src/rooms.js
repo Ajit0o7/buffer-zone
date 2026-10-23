@@ -5,6 +5,8 @@ const KEY_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const KEY_LENGTH = 8;
 const EMPTY_ROOM_TTL_MS = 60_000;
 const MAX_CURTAINS_PER_ROOM = 500; // bounds memory if a client sends junk ids
+export const MAX_MEMORIES_PER_ROOM = 12; // wall spots set aside for them (client/src/gallery/memorySlots.js)
+const MAX_MEMORY_BYTES_TOTAL = 256 * 1024 * 1024; // across every room on this server
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const newToken = () => randomBytes(24).toString('base64url');
@@ -31,6 +33,7 @@ export function createRoomStore({ ttlMs = EMPTY_ROOM_TTL_MS } = {}) {
   const rooms = new Map(); // roomId -> room
   const roomIdByKeyHash = new Map(); // keyHash -> roomId
   const linkBySocket = new Map(); // socketId -> { roomId, role }
+  let memoryBytes = 0; // photos held in memory, all rooms
 
   function attach(room, role, socketId) {
     const slot = room.slots[role];
@@ -46,8 +49,13 @@ export function createRoomStore({ ttlMs = EMPTY_ROOM_TTL_MS } = {}) {
     if (!room) return;
     clearTimeout(room.cleanupTimer);
     roomIdByKeyHash.delete(room.keyHash);
+    for (const m of room.memories.values()) memoryBytes -= m.bytes.length;
     rooms.delete(roomId);
   }
+
+  const meta = ({ id, index, caption, date, type }) => ({ id, index, caption, date, type });
+  const roleFor = (room, token) =>
+    typeof token === 'string' ? ['host', 'guest'].find((r) => room.slots[r].token && safeEqual(room.slots[r].token, token)) : undefined;
 
   return {
     rooms,
@@ -59,6 +67,8 @@ export function createRoomStore({ ttlMs = EMPTY_ROOM_TTL_MS } = {}) {
         keyHash: sha256(key),
         slots: { host: newSlot(), guest: newSlot() },
         curtains: new Map(), // painting id -> true (held open) | false (held closed)
+        memories: new Map(), // id -> { id, index, caption, date, type, bytes: Buffer }
+        uploads: [], // timestamps of recent uploads, for the rate limit
         cleanupTimer: null,
       };
       room.slots.host.token = newToken();
@@ -147,6 +157,62 @@ export function createRoomStore({ ttlMs = EMPTY_ROOM_TTL_MS } = {}) {
       if (open === null) room.curtains.delete(id);
       else if (room.curtains.has(id) || room.curtains.size < MAX_CURTAINS_PER_ROOM) room.curtains.set(id, open);
       else return undefined;
+      const peer = room.slots[link.role === 'host' ? 'guest' : 'host'];
+      return peer.connected ? peer.socketId : null;
+    },
+
+    /** The other player's socket id, if they are connected: where voice signalling goes. */
+    peerSocketId(socketId) {
+      const link = linkBySocket.get(socketId);
+      if (!link) return null;
+      const peer = rooms.get(link.roomId).slots[link.role === 'host' ? 'guest' : 'host'];
+      return peer.connected ? peer.socketId : null;
+    },
+
+    /**
+     * Adds a photo to a room, for whoever holds one of its two tokens. It takes the lowest free spot.
+     * Returns { memory, sockets } (both players' sockets, to announce it), or { error }.
+     */
+    addMemory(roomId, token, { caption, date, type, bytes }, now = Date.now()) {
+      const room = rooms.get(roomId);
+      if (!room || !roleFor(room, token)) return { error: 'unauthorized' };
+      room.uploads = room.uploads.filter((t) => now - t < 60_000);
+      if (room.uploads.length >= 6) return { error: 'too_fast' };
+      if (room.memories.size >= MAX_MEMORIES_PER_ROOM) return { error: 'room_full' };
+      if (memoryBytes + bytes.length > MAX_MEMORY_BYTES_TOTAL) return { error: 'server_full' };
+
+      const taken = new Set([...room.memories.values()].map((m) => m.index));
+      let index = 0;
+      while (taken.has(index)) index += 1;
+      const memory = { id: randomBytes(16).toString('base64url'), index, caption, date, type, bytes };
+      room.memories.set(memory.id, memory);
+      room.uploads.push(now);
+      memoryBytes += bytes.length;
+      return { memory: meta(memory), sockets: ['host', 'guest'].map((r) => room.slots[r].socketId).filter(Boolean) };
+    },
+
+    /** A photo's bytes. The id is an unguessable capability, known only to the room's two players. */
+    getMemory(roomId, id) {
+      const memory = rooms.get(roomId)?.memories.get(id);
+      return memory ? { type: memory.type, bytes: memory.bytes } : null;
+    },
+
+    /** The room's photos (without bytes), for a player joining or resuming. */
+    memoryList(socketId) {
+      const link = linkBySocket.get(socketId);
+      if (!link) return [];
+      return [...rooms.get(link.roomId).memories.values()].map(meta);
+    },
+
+    /** Removes a photo, freeing its wall spot. Returns the partner's socket id (or null), or undefined if not found. */
+    removeMemory(socketId, id) {
+      const link = linkBySocket.get(socketId);
+      if (!link) return undefined;
+      const room = rooms.get(link.roomId);
+      const memory = room.memories.get(id);
+      if (!memory) return undefined;
+      room.memories.delete(id);
+      memoryBytes -= memory.bytes.length;
       const peer = room.slots[link.role === 'host' ? 'guest' : 'host'];
       return peer.connected ? peer.socketId : null;
     },
