@@ -1,5 +1,6 @@
 import {
   ImageBitmapLoader,
+  LoadingManager,
   LinearMipmapLinearFilter,
   SRGBColorSpace,
   Texture,
@@ -28,7 +29,9 @@ const entries = new Map(); // src -> { refs, texture, bytes, promise, lastUsed }
 let bitmapLoader = null;
 const getBitmapLoader = () => {
   // The bitmap is flipped at decode time, because WebGL ignores flipY for ImageBitmap uploads.
-  bitmapLoader ??= new ImageBitmapLoader().setOptions({ imageOrientation: 'flipY', premultiplyAlpha: 'none' });
+  // Its own loading manager: photos stream in while you play, so they mustn't count toward (and re-show) the
+  // house's loading screen, which follows three's default manager.
+  bitmapLoader ??= new ImageBitmapLoader(new LoadingManager()).setOptions({ imageOrientation: 'flipY', premultiplyAlpha: 'none' });
   return bitmapLoader;
 };
 
