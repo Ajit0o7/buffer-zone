@@ -1,0 +1,21 @@
+# Render Blueprint for the game server (server/). In Render: New > Blueprint, pick this repository.
+# The client is a static site and stays on Vercel; see docs/DEPLOY.md for the whole setup.
+services:
+  - type: web
+    name: our-house-server
+    runtime: node
+    rootDir: server
+    # Singapore is Render's closest region to South Asia; change it if you and your partner are elsewhere
+    # (oregon, ohio, virginia, frankfurt, singapore).
+    region: singapore
+    plan: free # sleeps after 15 minutes without visitors and takes up to a minute to wake; "starter" stays awake
+    buildCommand: npm ci --omit=dev
+    startCommand: node src/index.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # The web pages allowed to connect: your Vercel site, plus its preview deployments (comma-separated, * allowed).
+      - key: CLIENT_ORIGIN
+        value: https://privatespace-chi.vercel.app,https://privatespace-*.vercel.app

@@ -20,7 +20,8 @@ export default function Lobby() {
 
   // Tell the guest when the server is unreachable, instead of letting Join hang silently.
   useEffect(() => {
-    const onError = () => setError('Cannot reach the house right now. Check your connection and try again.');
+    // A free server host sleeps when nobody's visited for a while and needs up to a minute to wake: keep trying, say so.
+    const onError = () => setError('Cannot reach the house yet. If nobody has visited for a while it can take up to a minute to wake up; this page keeps trying.');
     const onConnect = () => setError((msg) => (msg?.startsWith('Cannot reach') ? null : msg));
     socket.on('connect_error', onError);
     socket.on('connect', onConnect);

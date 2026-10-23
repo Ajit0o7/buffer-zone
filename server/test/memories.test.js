@@ -188,3 +188,13 @@ test('spots: a short list of distinct, in-range numbers', () => {
   assert.deepEqual(sanitizeSpots(undefined, 30), []);
   assert.deepEqual(sanitizeSpots('1,'.repeat(300), 30), []);
 });
+
+test('origins: CLIENT_ORIGIN may use * for preview deployments, within one host label', () => {
+  const ok = createOriginCheck(['https://privatespace-chi.vercel.app', 'https://privatespace-*.vercel.app']);
+  assert.equal(ok('https://privatespace-chi.vercel.app'), true);
+  assert.equal(ok('https://privatespace-git-main-ajit.vercel.app'), true);
+  assert.equal(ok('https://privatespace-x.vercel.app.evil.com'), false);
+  assert.equal(ok('https://privatespace-a.b.vercel.app'), false);
+  assert.equal(ok('https://other.vercel.app'), false);
+  assert.equal(ok('http://privatespace-chi.vercel.app'), false);
+});

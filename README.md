@@ -13,7 +13,7 @@ Deep dives: [docs/ROOMS.md](docs/ROOMS.md) (the five rooms, the grand stair, pra
 [docs/VOICE.md](docs/VOICE.md) (spatial voice chat) · [docs/AUDIO.md](docs/AUDIO.md) (footsteps, reverb) ·
 [docs/MEMORIES.md](docs/MEMORIES.md) (adding your own photos) · [docs/COUPLE.md](docs/COUPLE.md) (emotes, sitting,
 walking together, photo mode, all the keys) · [docs/ATMOSPHERE.md](docs/ATMOSPHERE.md) (sky, chandeliers, floor,
-lounge, fountain, greenery).
+lounge, fountain, greenery) · [docs/DEPLOY.md](docs/DEPLOY.md) (putting it online: Vercel + Render).
 
 ```
 buffer-zone/
@@ -355,9 +355,11 @@ draws 34–51 calls with one player in view, about 65–70 with both avatars on 
 opened by one opens for the other. Software rendering here runs at about 1.4 fps, so frame times can't be measured in this sandbox. The
 90 fps target is a design budget until you profile it on real hardware.
 
+To put it online (the page on Vercel, the server on Render with `render.yaml`), see [docs/DEPLOY.md](docs/DEPLOY.md).
+
 Environment variables (see `client/.env.example`):
 - `client/.env.local`: `VITE_SERVER_URL=https://your-server.example.com`
-- server: `PORT`, `CLIENT_ORIGIN=https://your-site.example.com` (comma-separated for more than one; unset, the server accepts localhost and private-network pages, for development)
+- server: `PORT`, `CLIENT_ORIGIN=https://your-site.example.com` (comma-separated for more than one, `*` allowed within a host name for preview builds; unset, the server accepts localhost and private-network pages, for development)
 
 ---
 
