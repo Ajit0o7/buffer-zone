@@ -11,7 +11,7 @@ Everything two people do together in the house: emotes, sitting, walking hand in
 | **E** | Sit on the seat in front of you (stair, benches, sofa, armchairs, piano bench); **E** or a move key stands up |
 | **H** | Ask your partner to walk together; **H** on their side says yes; **H** again lets go |
 | **C** | Photo mode: **Space** takes the picture, **C** goes back |
-| **G** | Games: Heart Hunt, How well do you know me? |
+| **G** | Games: Heart Hunt, How well do you know me?, Truth or Dare |
 | V / M | Microphone / Add a memory (see VOICE.md, MEMORIES.md) |
 
 The emotes, Together and Photo are also buttons on the left-hand rail, and the microphone and Add memory on the right
@@ -64,3 +64,20 @@ your time together. It works alone too.
 you: they answer honestly about themselves, the other guesses. The server keeps the answer secret until both have
 picked, then reveals both. Turns alternate; at the end you get your score and a verdict. Answer with the mouse or
 keys 1–4.
+
+**Truth or Dare 💌.** Turn by turn: whoever's turn it is picks Truth or Dare, and the card flips open on both
+screens. Re-roll for another card; **Done ❤️** (either of you) sets off heart confetti and a fanfare on both screens
+and passes the turn.
+
+- **Endless cards** (`client/src/games/truthOrDare.js`): the server sends a random seed and both screens expand it
+  the same way, into one of tens of thousands of combinations. Truths come in three vibes: sweet and nostalgic
+  (first impressions, butterflies, favourite memories), deep and emotional (dreams, feelings, promises), flirty and
+  playful (teasing, nicknames, compliments). Dares are mostly for the real world: photos to send (the 5th photo in
+  your camera roll, your lock screen, a candid selfie, something nearby), voice on the mic (say "I love you" like a
+  movie villain, sing ten seconds of a love song, whisper compliments, tell the story of when you fell in love),
+  and sweet things to do (a three-sentence text without the word "love", a promise with your hand on your heart, a
+  new pet name). Now and then a dare happens in the house itself (lead them by the hand, take a polaroid).
+- **Wildcards**: about one card in eight is a wildcard, and your partner writes the truth or dare for you there and
+  then.
+- **Secret cards**: "Add a secret card for your partner" puts your own question or dare into the deck. Only the count
+  shows until your partner draws it (about 40% of their draws of that kind, while you have one waiting).

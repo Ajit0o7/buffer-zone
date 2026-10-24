@@ -5,11 +5,18 @@
 //         to collect it. Found by either of you, counted for whoever found it; timed until the last one.
 //   quiz: "How well do you know me?". Each round one of you (`about`) answers a question about themselves and the
 //         other guesses; both picks are revealed together. Turns alternate; matches are counted.
+//   tod:  Truth or Dare. Whoever's turn it is picks truth or dare; a card is drawn for both to see: usually from the
+//         endless generator (the server sends a seed, both clients expand it the same way), sometimes one of the
+//         secret cards the partner wrote, sometimes a wildcard the partner writes there and then. Re-roll for another
+//         card; Done passes the turn (and sets off confetti on both screens).
 
 // Keep these equal to the client's lists: HUNT_SPOTS in client/src/games/hunt.js, QUESTIONS in games/quiz.js.
 export const HUNT = { spots: 24, hearts: 10 };
 export const QUIZ = { questions: 32, rounds: 8, choices: 4 };
-export const GAME_KINDS = new Set(['hunt', 'quiz']);
+export const TOD = { maxCustom: 40, customChance: 0.4, wildChance: 0.12, types: new Set(['truth', 'dare']) };
+export const GAME_KINDS = new Set(['hunt', 'quiz', 'tod']);
+
+const other = (role) => (role === 'host' ? 'guest' : 'host');
 
 /** `count` distinct numbers below `n`, in random order. */
 function pick(n, count, rand) {
@@ -36,7 +43,68 @@ export function startGame(kind, now = Date.now(), rand = Math.random) {
       done: false,
     };
   }
+  if (kind === 'tod') {
+    return { kind, turn: rand() < 0.5 ? 'host' : 'guest', phase: 'choose', card: null, round: 1, celebrate: 0, decks: { host: [], guest: [] } };
+  }
   return null;
+}
+
+/** Draws a card of `type` for whoever's turn it is: a secret card the partner wrote, a wildcard, or a generated one. */
+function drawCard(game, type, rand) {
+  const author = other(game.turn); // secret cards are written by the partner, for the player
+  const mine = game.decks[author].filter((c) => c.type === type);
+  if (mine.length && rand() < TOD.customChance) {
+    const card = mine[Math.floor(rand() * mine.length)];
+    game.decks[author].splice(game.decks[author].indexOf(card), 1);
+    game.card = { type, source: 'custom', text: card.text };
+    game.phase = 'card';
+  } else if (rand() < TOD.wildChance) {
+    game.card = { type, source: 'wild', text: null }; // the partner writes it now
+    game.phase = 'wild';
+  } else {
+    game.card = { type, source: 'deck', seed: Math.floor(rand() * 2 ** 31) };
+    game.phase = 'card';
+  }
+}
+
+/** Truth or dare? Only the player whose turn it is picks. */
+export function todPick(game, role, type, rand = Math.random) {
+  if (game?.kind !== 'tod' || game.phase !== 'choose' || role !== game.turn || !TOD.types.has(type)) return false;
+  drawCard(game, type, rand);
+  return true;
+}
+
+/** Another card of the same kind, for the player whose turn it is. */
+export function todReroll(game, role, rand = Math.random) {
+  if (game?.kind !== 'tod' || game.phase !== 'card' || role !== game.turn) return false;
+  drawCard(game, game.card.type, rand);
+  return true;
+}
+
+/** The partner writes the wildcard's truth or dare. */
+export function todWild(game, role, text) {
+  if (game?.kind !== 'tod' || game.phase !== 'wild' || role === game.turn) return false;
+  game.card = { ...game.card, text };
+  game.phase = 'card';
+  return true;
+}
+
+/** The card's done: confetti for both, and the turn passes. Either player can say so. */
+export function todDone(game) {
+  if (game?.kind !== 'tod' || game.phase !== 'card') return false;
+  game.celebrate += 1;
+  game.turn = other(game.turn);
+  game.phase = 'choose';
+  game.card = null;
+  game.round += 1;
+  return true;
+}
+
+/** A secret card for the partner's deck; its text stays hidden until it's drawn. */
+export function todAdd(game, role, type, text) {
+  if (game?.kind !== 'tod' || !TOD.types.has(type) || game.decks[role].length >= TOD.maxCustom) return false;
+  game.decks[role].push({ type, text });
+  return true;
 }
 
 /** A heart was walked into. Returns true if that changed anything. */
@@ -89,6 +157,18 @@ export function viewFor(game, role, now = Date.now()) {
       found: game.found,
       elapsedMs: (game.finishedAt ?? now) - game.startedAt,
       finished: game.finishedAt !== null,
+    };
+  }
+  if (game.kind === 'tod') {
+    return {
+      kind: 'tod',
+      turn: game.turn,
+      phase: game.phase,
+      card: game.card,
+      round: game.round,
+      celebrate: game.celebrate,
+      myCards: game.decks[role].length, // how many secret cards I've written that are still waiting
+      partnerCards: game.decks[other(role)].length, // and they have (counts only: the texts stay secret)
     };
   }
   const mine = role === game.about ? game.answer : game.guess;

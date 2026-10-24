@@ -5,6 +5,7 @@ import { answerQuiz, endGame, nextQuestion, startGame } from '../net/gameNet';
 import { HUNT_SPOTS } from '../games/hunt';
 import { QUESTIONS, quizVerdict } from '../games/quiz';
 import { localMotion } from '../world/shared';
+import TruthOrDare from './TruthOrDare';
 
 const clock = (ms) => {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -32,6 +33,11 @@ function Menu() {
         <span className="game-icon" aria-hidden="true">💬</span>
         <strong>How well do you know me?</strong>
         <span>{peerConnected ? 'Take turns: one answers about themselves, the other guesses. Eight questions.' : 'Needs your partner in the house.'}</span>
+      </button>
+      <button type="button" className="game-card" onClick={() => start('tod')} disabled={!peerConnected}>
+        <span className="game-icon" aria-hidden="true">💌</span>
+        <strong>Truth or Dare</strong>
+        <span>{peerConnected ? 'Take turns. Sweet, deep and flirty truths; dares for photos, voice and real life. Endless cards.' : 'Needs your partner in the house.'}</span>
       </button>
       <div className="games-menu-actions">
         {game && (
@@ -189,6 +195,7 @@ export default function GamesHud() {
     <>
       {game?.kind === 'hunt' && <Hunt game={game} role={role} />}
       {game?.kind === 'quiz' && <Quiz game={game} role={role} />}
+      {game?.kind === 'tod' && <TruthOrDare game={game} role={role} />}
       {menuOpen && <Menu />}
     </>
   );
