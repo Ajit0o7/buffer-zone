@@ -20,7 +20,9 @@ export default function CoupleControls({ disabled }) {
     const onKey = (e) => {
       if (disabled || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.target.closest?.('input, textarea, select')) return;
-      if (useGames.getState().game?.kind === 'quiz' && /^Digit[1-4]$/.test(e.code)) return; // the quiz's answer keys
+      const playing = useGames.getState().game?.kind;
+      if (playing === 'quiz' && /^Digit[1-4]$/.test(e.code)) return; // the quiz's answer keys
+      if (['nhie', 'wyr', 'mlt'].includes(playing) && /^Digit[12]$/.test(e.code)) return; // the prompt games' answer keys
       const emote = EMOTE_IDS.find((id) => e.code === `Digit${EMOTES[id].key}` || e.code === `Numpad${EMOTES[id].key}`);
       if (emote) sendEmote(emote);
       else if (e.code === 'KeyE') couple.sitPressed = true;

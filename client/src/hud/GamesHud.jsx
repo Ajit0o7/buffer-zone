@@ -6,6 +6,8 @@ import { HUNT_SPOTS } from '../games/hunt';
 import { QUESTIONS, quizVerdict } from '../games/quiz';
 import { localMotion } from '../world/shared';
 import TruthOrDare from './TruthOrDare';
+import PromptGame from './PromptGame';
+import { PROMPT_GAMES } from '../games/prompts';
 
 const clock = (ms) => {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -39,6 +41,13 @@ function Menu() {
         <strong>Truth or Dare</strong>
         <span>{peerConnected ? 'Take turns. Sweet, deep and flirty truths; dares for photos, voice and real life. Endless cards.' : 'Needs your partner in the house.'}</span>
       </button>
+      {Object.entries(PROMPT_GAMES).map(([kind, g]) => (
+        <button key={kind} type="button" className="game-card" onClick={() => start(kind)} disabled={!peerConnected}>
+          <span className="game-icon" aria-hidden="true">{g.icon}</span>
+          <strong>{g.title}</strong>
+          <span>{peerConnected ? g.blurb : 'Needs your partner in the house.'}</span>
+        </button>
+      ))}
       <div className="games-menu-actions">
         {game && (
           <button type="button" className="secondary" onClick={() => { endGame(); close(); }}>
@@ -196,6 +205,7 @@ export default function GamesHud() {
       {game?.kind === 'hunt' && <Hunt game={game} role={role} />}
       {game?.kind === 'quiz' && <Quiz game={game} role={role} />}
       {game?.kind === 'tod' && <TruthOrDare game={game} role={role} />}
+      {game && PROMPT_GAMES[game.kind] && <PromptGame game={game} />}
       {menuOpen && <Menu />}
     </>
   );
