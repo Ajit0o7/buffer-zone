@@ -3,8 +3,8 @@ import { Server } from 'socket.io';
 import { createRoomStore } from './rooms.js';
 import { createMemoryRoutes } from './memories.js';
 import { createOriginCheck, parseOrigins } from './origins.js';
-import { GAME_KINDS, HUNT, QUIZ, huntCollect, quizAnswer, quizNext, startGame, viewFor } from './games.js';
-import { normalizeKey, sanitizeCurtain, sanitizeEmote, sanitizeGameStart, sanitizeIndex, sanitizeState, sanitizeTogether, sanitizeVoiceSignal } from './validate.js';
+import { GAME_KINDS, HUNT, QUIZ, TOD, huntCollect, quizAnswer, quizNext, startGame, todAdd, todDone, todPick, todReroll, todWild, viewFor } from './games.js';
+import { normalizeKey, sanitizeCurtain, sanitizeCardText, sanitizeEmote, sanitizeGameStart, sanitizeIndex, sanitizeState, sanitizeTogether, sanitizeVoiceSignal } from './validate.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 const CLIENT_ORIGINS = parseOrigins(process.env.CLIENT_ORIGIN); // null: development default (see origins.js)
@@ -193,6 +193,17 @@ io.on('connection', (socket) => {
     return choice !== null && quizAnswer(ctx.room.game, ctx.role, choice);
   }));
   socket.on('game:quiz-next', gameMove((ctx) => quizNext(ctx.room.game)));
+  socket.on('game:tod-pick', gameMove((ctx, payload) => todPick(ctx.room.game, ctx.role, payload?.type)));
+  socket.on('game:tod-reroll', gameMove((ctx) => todReroll(ctx.room.game, ctx.role)));
+  socket.on('game:tod-done', gameMove((ctx) => todDone(ctx.room.game)));
+  socket.on('game:tod-wild', gameMove((ctx, payload) => {
+    const text = sanitizeCardText(payload?.text);
+    return text !== null && todWild(ctx.room.game, ctx.role, text);
+  }));
+  socket.on('game:tod-add', gameMove((ctx, payload) => {
+    const text = sanitizeCardText(payload?.text);
+    return text !== null && TOD.types.has(payload?.type) && todAdd(ctx.room.game, ctx.role, payload.type, text);
+  }));
 
   // High-frequency path: fire-and-forget, no ack, volatile so stale packets are never queued.
   socket.on('player:update', (payload) => {

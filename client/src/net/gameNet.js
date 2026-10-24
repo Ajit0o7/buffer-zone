@@ -19,3 +19,10 @@ export function bindGameSocket(socket) {
     io = null;
   };
 }
+
+// Truth or Dare
+export const todPick = (type) => io?.emit('game:tod-pick', { type });
+export const todReroll = () => io?.emit('game:tod-reroll');
+export const todDone = () => io?.emit('game:tod-done');
+export const todWild = (text) => io?.emit('game:tod-wild', { text });
+export const todAdd = (type, text) => io?.emit('game:tod-add', { type, text });

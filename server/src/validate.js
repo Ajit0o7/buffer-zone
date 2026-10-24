@@ -144,3 +144,10 @@ export function sanitizeGameStart(payload, kinds) {
 export function sanitizeIndex(value, below) {
   return Number.isInteger(value) && value >= 0 && value < below ? value : null;
 }
+
+/** Text a player writes for a card: plain, on one line, 1 to 200 characters. Returns null otherwise. */
+export function sanitizeCardText(value) {
+  if (typeof value !== 'string') return null;
+  const text = value.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+  return text || null;
+}
