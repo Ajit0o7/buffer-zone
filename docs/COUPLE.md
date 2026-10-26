@@ -11,7 +11,7 @@ Everything two people do together in the house: emotes, sitting, walking hand in
 | **E** | Sit on the seat in front of you (stair, benches, sofa, armchairs, piano bench); **E** or a move key stands up |
 | **H** | Ask your partner to walk together; **H** on their side says yes; **H** again lets go |
 | **C** | Photo mode: **Space** takes the picture, **C** goes back |
-| **G** | Games: Heart Hunt, How well do you know me?, Truth or Dare |
+| **G** | Games: Heart Hunt, How well do you know me?, Truth or Dare, Never Have I Ever, Would You Rather, Who's More Likely To |
 | V / M | Microphone / Add a memory (see VOICE.md, MEMORIES.md) |
 
 The emotes, Together and Photo are also buttons on the left-hand rail, and the microphone and Add memory on the right
@@ -81,3 +81,12 @@ and passes the turn.
   then.
 - **Secret cards**: "Add a secret card for your partner" puts your own question or dare into the deck. Only the count
   shows until your partner draws it (about 40% of their draws of that kind, while you have one waiting).
+
+**Never Have I Ever 🙋 · Would You Rather ⚖️ · Who's More Likely To 👉.** Three quick "both answer, then reveal"
+games on one engine. A prompt flips open on both screens; each of you answers in secret (click, or keys 1 and 2);
+when both have, the answers flip over together with a line about what it means (for example, "Only your partner
+has. Ask them about it!" or "You both say it is you!"), and Next deals another. Pick a category at the top (Mix,
+Sweet, Funny, Adventure, Flirty): either of you can switch, and it applies straight away if nobody has answered yet.
+The prompts come from an endless generator (`client/src/games/prompts.js`, from the server's seed) with hundreds to
+thousands of combinations per game. The tally counts confessions in Never Have I Ever, and how often you agree in
+the other two.

@@ -1198,3 +1198,84 @@ button.tod-pick:hover {
     opacity: 0.9;
   }
 }
+
+/* "Both answer, then reveal" games */
+.games-menu {
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.prompt-cats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+  margin-top: 0.8rem;
+}
+
+.prompt-cats button {
+  padding: 0.25rem 0.7rem;
+  font-size: 0.85rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.prompt-cats button.on {
+  background: linear-gradient(90deg, #ffb3c8, #ffd59a);
+  color: #2a0f17;
+  border-color: transparent;
+}
+
+.prompt-game .tod-card {
+  min-height: 8.5rem;
+}
+
+.prompt-answers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+  margin-top: 0.4rem;
+}
+
+.prompt-answer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  min-height: 4.2rem;
+  padding: 0.6rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 1.05rem;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.prompt-answer:disabled {
+  opacity: 1;
+}
+
+button.prompt-answer:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 0 20px rgba(255, 160, 190, 0.45);
+}
+
+.prompt-answer.mine {
+  border-color: #ffd59a;
+  box-shadow: 0 0 0 2px rgba(255, 213, 154, 0.5);
+}
+
+.prompt-answer.theirs {
+  background: rgba(255, 150, 185, 0.18);
+  border-color: #ff9fbf;
+}
+
+.prompt-who {
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--muted);
+}

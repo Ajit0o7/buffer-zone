@@ -108,3 +108,40 @@ test('card text: plain, one line, trimmed, at most 200 characters', () => {
   assert.equal(sanitizeCardText(42), null);
   assert.equal(sanitizeCardText('x'.repeat(300)).length, 200);
 });
+
+import { PROMPT_KINDS, promptCategory, promptNext, promptPick } from '../src/games.js';
+
+test('prompt games: picks are secret until both answer; each game keeps its own tally', () => {
+  for (const kind of PROMPT_KINDS) {
+    const g = startGame(kind, 0, seq([0.5]));
+    assert.equal(promptPick(g, 'host', 0), true);
+    assert.equal(promptPick(g, 'host', 1), false); // no changing your answer
+    const peek = viewFor(g, 'guest');
+    assert.equal(peek.partnerPicked, true);
+    assert.equal(peek.reveal, null);
+    assert.equal(peek.myPick, null);
+    assert.equal(promptNext(g), false); // not before the reveal
+    assert.equal(promptPick(g, 'guest', 1), true);
+    assert.deepEqual(viewFor(g, 'guest').reveal, { mine: 1, theirs: 0 });
+    const t = viewFor(g, 'host').tally;
+    if (kind === 'nhie') assert.deepEqual([t.mine, t.theirs, t.rounds], [1, 0, 1]); // only the host confessed
+    if (kind === 'wyr') assert.equal(t.matches, 0); // they chose differently
+    if (kind === 'mlt') assert.equal(t.matches, 1); // "me" + "my partner" point at the same person
+    const seed = g.seed;
+    assert.equal(promptNext(g, seq([0.25])), true);
+    assert.notEqual(g.seed, seed);
+    assert.equal(viewFor(g, 'host').myPick, null);
+  }
+});
+
+test('prompt games: switching category deals a new prompt only if nobody has answered yet', () => {
+  const g = startGame('nhie', 0, seq([0.5]));
+  const seed = g.seed;
+  assert.equal(promptCategory(g, 'spicy-unknown'), false);
+  assert.equal(promptCategory(g, 'funny', seq([0.1])), true);
+  assert.notEqual(g.seed, seed);
+  promptPick(g, 'host', 0);
+  const kept = g.seed;
+  assert.equal(promptCategory(g, 'sweet', seq([0.9])), true);
+  assert.equal(g.seed, kept); // the host already answered this one
+});

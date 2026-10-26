@@ -50,7 +50,7 @@ export default function Hud() {
   }, []);
 
   const photoMode = useCouple((s) => s.photoMode);
-  const quizOn = useGames((s) => s.game?.kind === 'quiz' || s.game?.kind === 'tod'); // their panels take the middle of the screen
+  const quizOn = useGames((s) => !!s.game && s.game.kind !== 'hunt'); // the card games' panels take the middle of the screen
   const role = useSession((s) => s.role);
   const roomKey = useSession((s) => s.key);
   const peerConnected = useSession((s) => s.peerConnected);

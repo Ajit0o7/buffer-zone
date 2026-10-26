@@ -26,3 +26,8 @@ export const todReroll = () => io?.emit('game:tod-reroll');
 export const todDone = () => io?.emit('game:tod-done');
 export const todWild = (text) => io?.emit('game:tod-wild', { text });
 export const todAdd = (type, text) => io?.emit('game:tod-add', { type, text });
+
+// "Both answer, then reveal" games (Never Have I Ever, Would You Rather, Who's More Likely To)
+export const promptPick = (choice) => io?.emit('game:prompt-pick', { choice });
+export const promptNext = () => io?.emit('game:prompt-next');
+export const promptCategory = (category) => io?.emit('game:prompt-category', { category });

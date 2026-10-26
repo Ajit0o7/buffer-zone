@@ -14,7 +14,12 @@
 export const HUNT = { spots: 24, hearts: 10 };
 export const QUIZ = { questions: 32, rounds: 8, choices: 4 };
 export const TOD = { maxCustom: 40, customChance: 0.4, wildChance: 0.12, types: new Set(['truth', 'dare']) };
-export const GAME_KINDS = new Set(['hunt', 'quiz', 'tod']);
+// "Both answer, then reveal" party games: Never Have I Ever, Would You Rather, Who's More Likely To. Each round is a
+// prompt from the client's endless generator (a seed and a category); both pick one of two answers in secret; the
+// picks are revealed together.
+export const PROMPT_KINDS = new Set(['nhie', 'wyr', 'mlt']);
+export const PROMPT_CATEGORIES = new Set(['mix', 'sweet', 'funny', 'adventure', 'flirty']);
+export const GAME_KINDS = new Set(['hunt', 'quiz', 'tod', ...PROMPT_KINDS]);
 
 const other = (role) => (role === 'host' ? 'guest' : 'host');
 
@@ -42,6 +47,9 @@ export function startGame(kind, now = Date.now(), rand = Math.random) {
       score: { matches: 0, rounds: 0 },
       done: false,
     };
+  }
+  if (PROMPT_KINDS.has(kind)) {
+    return { kind, round: 1, seed: Math.floor(rand() * 2 ** 31), category: 'mix', picks: { host: null, guest: null }, reveal: null, tally: { host: 0, guest: 0, matches: 0, rounds: 0 } };
   }
   if (kind === 'tod') {
     return { kind, turn: rand() < 0.5 ? 'host' : 'guest', phase: 'choose', card: null, round: 1, celebrate: 0, decks: { host: [], guest: [] } };
@@ -107,6 +115,44 @@ export function todAdd(game, role, type, text) {
   return true;
 }
 
+/** A secret pick (0 or 1) in a prompt game; when both have picked, both are revealed and the tally moves on. */
+export function promptPick(game, role, choice) {
+  if (!PROMPT_KINDS.has(game?.kind) || game.reveal || game.picks[role] !== null) return false;
+  game.picks[role] = choice;
+  const { host, guest } = game.picks;
+  if (host !== null && guest !== null) {
+    game.reveal = { host, guest };
+    game.tally.rounds += 1;
+    // Never Have I Ever counts confessions ("I have" is 0); the other two count agreement. In Who's More Likely To
+    // the picks are "me" (0) or "my partner" (1), so the two agree when they point at the same person: different picks.
+    if (game.kind === 'nhie') {
+      if (host === 0) game.tally.host += 1;
+      if (guest === 0) game.tally.guest += 1;
+    } else if (game.kind === 'wyr' ? host === guest : host !== guest) {
+      game.tally.matches += 1;
+    }
+  }
+  return true;
+}
+
+/** The next prompt, after a reveal. */
+export function promptNext(game, rand = Math.random) {
+  if (!PROMPT_KINDS.has(game?.kind) || !game.reveal) return false;
+  game.round += 1;
+  game.seed = Math.floor(rand() * 2 ** 31);
+  game.picks = { host: null, guest: null };
+  game.reveal = null;
+  return true;
+}
+
+/** Either player can switch the category; the current prompt is replaced if nobody has answered it yet. */
+export function promptCategory(game, category, rand = Math.random) {
+  if (!PROMPT_KINDS.has(game?.kind) || !PROMPT_CATEGORIES.has(category) || category === game.category) return false;
+  game.category = category;
+  if (!game.reveal && game.picks.host === null && game.picks.guest === null) game.seed = Math.floor(rand() * 2 ** 31);
+  return true;
+}
+
 /** A heart was walked into. Returns true if that changed anything. */
 export function huntCollect(game, role, spot, now = Date.now()) {
   if (game?.kind !== 'hunt' || game.finishedAt !== null) return false;
@@ -157,6 +203,19 @@ export function viewFor(game, role, now = Date.now()) {
       found: game.found,
       elapsedMs: (game.finishedAt ?? now) - game.startedAt,
       finished: game.finishedAt !== null,
+    };
+  }
+  if (PROMPT_KINDS.has(game.kind)) {
+    const them = other(role);
+    return {
+      kind: game.kind,
+      round: game.round,
+      seed: game.seed,
+      category: game.category,
+      myPick: game.picks[role],
+      partnerPicked: game.picks[them] !== null, // their pick itself stays secret until the reveal
+      reveal: game.reveal ? { mine: game.reveal[role], theirs: game.reveal[them] } : null,
+      tally: { mine: game.tally[role], theirs: game.tally[them], matches: game.tally.matches, rounds: game.tally.rounds },
     };
   }
   if (game.kind === 'tod') {
